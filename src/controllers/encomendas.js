@@ -5,8 +5,8 @@
 const { buscaEncomendas, gravaEncomenda: gravaEncomendaModel, FiltraEncomendas, atualizaEncomenda } = require("../models/encomendas");
 
 const getEncomenda = async (req, res) => {
-  const data = await buscaEncomendas();
-  return res.json(data);
+  const result = await buscaEncomendas();
+  return res.json(result);
 }
 
 // 2. Mudamos o nome da função do Controller para 'criarEncomenda'
