@@ -3,12 +3,12 @@ const pool = require("./connection");
 // Função de busca ajustada para ignorar espaços em branco
 async function buscaContribuintes(nr_telefone) {
     // TRIM remove espaços antes e depois, garantindo que ' 48-999 ' vire '48-999'
-    const sql = "SELECT * FROM database.contribuintes WHERE TRIM(nr_telefone)=$1";
+    const sql = `
+        SELECT * FROM database.contribuintes 
+        WHERE regexp_replace(nr_telnovo, '[^0-9]', '', 'g') = regexp_replace($1, '[^0-9]', '', 'g')
+    `;    
     
-    // removemos espaços do parametro também
-    const telefoneLimpo = nr_telefone ? nr_telefone.trim() : "";
-    
-    const { rows } = await pool.query(sql, [telefoneLimpo]);
+    const { rows } = await pool.query(sql, [nr_telefone || '']);
     return rows;
 }
 
@@ -20,12 +20,12 @@ async function buscaCodContribuinte() {
 
 async function getIDContribuinte(nr_telefone) {
     // TRIM remove espaços antes e depois, garantindo que ' 48-999 ' vire '48-999'
-    const sql = "SELECT id_contribuintes FROM database.contribuintes WHERE TRIM(nr_telefone)=$1";
+    const sql = `
+        SELECT id_contribuintes FROM database.contribuintes 
+        WHERE regexp_replace(nr_telnovo, '[^0-9]', '', 'g') = regexp_replace($1, '[^0-9]', '', 'g')
+    `;    
     
-    // removemos espaços do parametro também
-    const telefoneLimpo = nr_telefone ? nr_telefone.trim() : "";
-    
-    const { rows } = await pool.query(sql, [telefoneLimpo]);
+    const { rows } = await pool.query(sql, [nr_telefone || '']);
     return rows;
 }
 

@@ -20,7 +20,7 @@ const listaDeProdutos = [
     "vl_sandfr","vl_sandfra","vl_doccam","vl_cricri","vl_tortsa","vl_maeben","vl_outros","vl_cookie",
     "vl_paoque","vl_paocach","vl_paoham","vl_marr","vl_sonsere","vl_sonavel","vl_sondoc","vl_sonbal",
     "vl_cava","vl_empad","vl_quich","vl_empagr","vl_cacho","ds_obsdiv","ds_bolomilh","vl_sandfrint",
-    "vl_mnipizza","vl_pudin","vl_pizza", "ds_fototorta"
+    "vl_mnipizza","vl_pudin","vl_pizza", "ds_fototorta", "vl_paominix", "vl_pastmil", "vl_rispalm"
 ];
 
 // --- GRAVAR (INSERT) ---
@@ -49,7 +49,7 @@ const gravaEncomenda = async (dadosEncomenda) => {
         }
     }
 
-    const colunas = ['id_usuarios', 'id_contribuintes', 'nm_nomefantasia', 'hr_horaenc', 'dt_abertura', 'st_status', 'observacao'];
+    const colunas = ['id_usuarios', 'id_contribuintes', 'nm_nomefantasia', 'hr_horaenc', 'dt_abertura', 'st_status', 'observacao', 'nr_telefone'];
     
     const valores = [
         dadosEncomenda.id_usuarios || 1,
@@ -58,10 +58,11 @@ const gravaEncomenda = async (dadosEncomenda) => {
         dadosEncomenda.hr_horaenc,      
         dadosEncomenda.dt_abertura,     
         dadosEncomenda.st_status || '1',
-        dadosEncomenda.observacao || ''
+        dadosEncomenda.observacao || '',
+        dadosEncomenda.nr_telefone || ''
     ];
     
-    const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', '$7'];
+    const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', '$7', '$8'];
 
     listaDeProdutos.forEach((campo) => {
         const valor = dadosEncomenda[campo];
@@ -94,7 +95,7 @@ const buscaEncomendas = async () => {
     console.log(">>> PROCESSANDO PAINEL DE ENCOMENDAS... <<<");
 
     const sql = `SELECT TO_CHAR(dt_abertura, 'DD/MM/YYYY') AS dt_formatada, 
-                 hr_horaenc, nm_nomefantasia, id_ordemservicos, * FROM relatorios.encomendas 
+                 hr_horaenc, nm_nomefantasia, id_ordemservicos, nr_telefone, * FROM relatorios.encomendas 
                  WHERE st_status='1' AND dt_abertura=CURRENT_DATE ORDER BY hr_horaenc ASC`;
 
     try {
@@ -166,11 +167,7 @@ const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abe
     let sql = `
         SELECT 
             re.*, 
-            TO_CHAR(re.dt_abertura, 'DD/MM/YYYY') AS dt_formatada, 
-            
-            -- Pega o telefone novo da tabela de cadastro (mascara corrigida)
-            c.nr_telnovo AS nr_telefone
-            
+            TO_CHAR(re.dt_abertura, 'DD/MM/YYYY') AS dt_formatada                                            
         FROM relatorios.encomendas re
         LEFT JOIN database.contribuintes c ON c.id_contribuintes = re.id_contribuintes
         WHERE 1=1
@@ -181,7 +178,7 @@ const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abe
 
     // Filtros
     if (nr_telefone && nr_telefone.trim() !== "") {
-        sql += ` AND c.nr_telnovo = $${contador}`;
+        sql += ` AND re.nr_telefone = $${contador}`;
         valores.push(nr_telefone);
         contador++;
     }
