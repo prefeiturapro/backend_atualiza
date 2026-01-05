@@ -8,7 +8,7 @@ const { getIDContribuinte } = require("./contribuintes");
 const listaDeProdutos = [
     //salgadinhos de festa
     "vl_risfrango","vl_rispresque","vl_coxinha","vl_pastelcar","vl_pastelban",
-    "vl_salsic","vl_quibe","vl_bolquei",
+    "vl_salsic","vl_quibe","vl_bolquei", "ds_obssalg",
 
     //tortas
     "ds_decoracao", "ds_recheio","vl_tamanho","ds_topo","ds_papel","ds_gliter","ds_redonda",
@@ -29,7 +29,7 @@ const listaDeProdutos = [
     "vl_pudin","vl_pizza", "ds_fototorta", "vl_paominix", "vl_pastmil", "vl_rispalm",
     
     //minis
-    "vl_mindonu","vl_minempa","vl_miniquic", "vl_minibaufr","vl_minibaupr","vl_minibauca",
+    "ds_obsminis", "vl_mindonu","vl_minempa","vl_miniquic", "vl_minibaufr","vl_minibaupr","vl_minibauca",
     "vl_minicook","vl_minix","vl_minicacho", "vl_minipaoca","vl_minipaofr","vl_minisonre",
     "vl_minisoave"
 ];
