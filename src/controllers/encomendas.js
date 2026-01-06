@@ -20,11 +20,20 @@ const criarEncomenda = async (req, res) => {
         const dados = req.body;
         console.log("[CONTROLLER] 2. Dados recebidos do Frontend:", dados);
 
-        if (req.file) {
-            console.log("Arquivo recebido na memória:", req.file.originalname);
-            dados.ds_fototorta = req.file.buffer; // <--- O BINÁRIO ESTÁ AQUI
+if (dados.ds_fototorta_base64) {
+            try {
+                console.log("[CONTROLLER] Convertendo foto Base64...");
+                // Remove o cabeçalho "data:image/jpeg;base64," se existir e pega só o código
+                const partes = dados.ds_fototorta_base64.split(';base64,');
+                const base64Pura = partes.pop() || partes[0];
+                
+                // Converte para Buffer (formato que o banco aceita)
+                dados.ds_fototorta = Buffer.from(base64Pura, 'base64');
+            } catch (erroFoto) {
+                console.error("Erro ao converter foto:", erroFoto);
+            }
         }
-
+        
         // Validação básica
         if (!dados.nm_nomefantasia || !dados.hr_horaenc || !dados.dt_abertura) {
             console.log("[CONTROLLER] ERRO: Campos obrigatórios faltando!");
@@ -69,11 +78,21 @@ const updateEncomenda = async (req, res) => {
 
     try {
 
-        if (req.file) {
-            console.log("Atualizando foto:", req.file.originalname);
-            dados.ds_fototorta = req.file.buffer;
+if (dados.ds_fototorta_base64) {
+            try {
+                console.log("[CONTROLLER] Convertendo foto Base64...");
+                // Remove o cabeçalho "data:image/jpeg;base64," se existir e pega só o código
+                const partes = dados.ds_fototorta_base64.split(';base64,');
+                const base64Pura = partes.pop() || partes[0];
+                
+                // Converte para Buffer (formato que o banco aceita)
+                dados.ds_fototorta = Buffer.from(base64Pura, 'base64');
+            } catch (erroFoto) {
+                console.error("Erro ao converter foto:", erroFoto);
+            }
         }
-
+        
+        
         if (!id) {
             return res.status(400).json({ erro: "ID da encomenda é obrigatório." });
         }

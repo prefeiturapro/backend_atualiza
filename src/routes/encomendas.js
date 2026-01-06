@@ -15,10 +15,10 @@ const processaencomenda = require("../controllers/processaencomenda");
 // ROTA EXISTENTE — lista todas as encomendas
 router.get("/", getEncomenda);
 router.post("/filtrar", getFiltraEncomenda);
-router.put("/:id", upload.single('ds_fototorta'), updateEncomenda);
+router.post("/atualizar/:id", updateEncomenda);
 
 // Agora 'criarEncomenda' existe e é uma função válida
-router.post("/", upload.single('ds_fototorta'), criarEncomenda);
+router.post("/", criarEncomenda);
 
 // NOVA ROTA — retorna uma encomenda detalhada
 router.get("/:id", async (req, res) => {
