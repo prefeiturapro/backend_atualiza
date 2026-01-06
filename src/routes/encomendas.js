@@ -16,7 +16,7 @@ const processaencomenda = require("../controllers/processaencomenda");
 router.get("/", getEncomenda);
 router.post("/filtrar", getFiltraEncomenda);
 router.post("/atualizar/:id", updateEncomenda);
-
+router.put("/:id", updateEncomenda);
 // Agora 'criarEncomenda' existe e é uma função válida
 router.post("/", criarEncomenda);
 

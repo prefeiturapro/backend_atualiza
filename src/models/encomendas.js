@@ -108,7 +108,7 @@ const buscaEncomendas = async () => {
     const sql = `SELECT TO_CHAR(dt_abertura, 'DD/MM/YYYY') AS dt_formatada, 
                  hr_horaenc, nm_nomefantasia, id_ordemservicos, nr_telefone, st_status,
                  * FROM relatorios.encomendas 
-                 WHERE st_status='1' AND dt_abertura=CURRENT_DATE ORDER BY hr_horaenc ASC`;
+                 WHERE st_status='1' AND dt_abertura=CURRENT_DATE ORDER BY st_status, hr_horaenc ASC`;
 
     try {
         const { rows: encomendas } = await pool.query(sql);
@@ -213,7 +213,7 @@ const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abe
         contador++;
     }
 
-    sql += ` ORDER BY re.dt_abertura ASC, re.hr_horaenc ASC`;
+    sql += ` ORDER BY st_status, re.dt_abertura ASC, re.hr_horaenc ASC`;
 
     try {
         const { rows } = await pool.query(sql, valores);
