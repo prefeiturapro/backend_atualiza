@@ -48,13 +48,14 @@ const gravaContribuinte = async (dadosContribuinte) => {
 
         // 11 Colunas
         const colunas = [
-            'nr_telefone', 'nm_nomefantasia', 'nm_razaocomplemento', 
+            'nr_telefone', 'nr_telnovo' ,'nm_nomefantasia', 'nm_razaocomplemento', 
             'ds_email', 'nm_logradouro', 'nm_bairro', 
             'cd_contribuinte','id_logradouros', 'id_bairros',
             'tp_pessoa', 'tp_rua', 'id_municipios'
         ];
         
         const valores = [
+            telefoneParaGravar, // Telefone limpo (sem espaços extras)
             telefoneParaGravar, // Telefone limpo (sem espaços extras)
             dadosContribuinte.nm_nomefantasia.toUpperCase(), // Força maiúsculo para padronizar
             dadosContribuinte.nm_nomefantasia.toUpperCase(), 
@@ -70,7 +71,7 @@ const gravaContribuinte = async (dadosContribuinte) => {
         ];
         
         // 12 Placeholders
-        const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', '$7', '$8', '$9', '$10', '$11', '$12'];
+        const placeholders = ['$1', '$2', '$3', '$4', '$5', '$6', '$7', '$8', '$9', '$10', '$11', '$12', '$13'];
 
         const sql = `
             INSERT INTO database.contribuintes (${colunas.join(', ')}) 
