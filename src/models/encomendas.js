@@ -224,6 +224,7 @@ const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abe
     }
 }
 
+
 // --- ATUALIZAR (UPDATE) ---
 const atualizaEncomenda = async (id, dadosEncomenda) => {
     
@@ -304,9 +305,19 @@ const atualizaEncomenda = async (id, dadosEncomenda) => {
     }
 };
 
+const atualizaStatusProducao = async (id, status) => {
+    // ATENÇÃO: Confirme se sua variável de conexão se chama 'pool' ou 'client' aqui nesse arquivo
+    const { rows } = await pool.query(
+        'UPDATE encomendas SET st_producao = $1 WHERE id_encomendas = $2 RETURNING *',
+        [status, id]
+    );
+    return rows[0];
+};
+
 module.exports = { 
     buscaEncomendas, 
     gravaEncomenda,
     FiltraEncomendas,
-    atualizaEncomenda 
+    atualizaEncomenda,
+    atualizaStatusProducao
 };

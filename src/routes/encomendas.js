@@ -6,7 +6,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 // Agora sim isso vai funcionar, pois exportamos 'criarEncomenda' no arquivo acima
-const { getEncomenda, criarEncomenda, getFiltraEncomenda, updateEncomenda } = require("../controllers/encomendas");
+const { getEncomenda, criarEncomenda, getFiltraEncomenda, updateEncomenda, updateStatusProducao } = require("../controllers/encomendas");
 
 // CORREÇÃO: Aponte para o arquivo correto do controller de processamento
 // (Supondo que o arquivo seja controllers/processaencomenda.js)
@@ -19,6 +19,7 @@ router.post("/atualizar/:id", updateEncomenda);
 router.put("/:id", updateEncomenda);
 // Agora 'criarEncomenda' existe e é uma função válida
 router.post("/", criarEncomenda);
+router.put("/:id/producao", updateStatusProducao);
 
 // NOVA ROTA — retorna uma encomenda detalhada
 router.get("/:id", async (req, res) => {

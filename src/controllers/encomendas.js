@@ -2,7 +2,7 @@
 
 // 1. Renomeamos na importação para evitar conflito (Alias)
 // gravaEncomenda (do banco) vira gravaEncomendaModel
-const { buscaEncomendas, gravaEncomenda: gravaEncomendaModel, FiltraEncomendas, atualizaEncomenda } = require("../models/encomendas");
+const { buscaEncomendas, gravaEncomenda: gravaEncomendaModel, FiltraEncomendas, atualizaEncomenda, atualizaStatusProducao } = require("../models/encomendas");
 
 const getEncomenda = async (req, res) => {
   const result = await buscaEncomendas();
@@ -78,7 +78,7 @@ const updateEncomenda = async (req, res) => {
 
     try {
 
-if (dados.ds_fototorta_base64) {
+       if (dados.ds_fototorta_base64) {
             try {
                 console.log("[CONTROLLER] Convertendo foto Base64...");
                 // Remove o cabeçalho "data:image/jpeg;base64," se existir e pega só o código
@@ -114,9 +114,38 @@ if (dados.ds_fototorta_base64) {
     }
 };
 
+// --- NOVA FUNÇÃO PARA O STATUS DA COZINHA ---
+const updateStatusProducao = async (req, res) => {
+    const { id } = req.params;
+    const { st_producao } = req.body;
+
+    try {
+        if (!st_producao) {
+            return res.status(400).json({ error: 'Status de produção é obrigatório.' });
+        }
+
+        // Chama a função nova do Model
+        const resultado = await atualizaStatusProducao(id, st_producao);
+
+        if (!resultado) {
+            return res.status(404).json({ error: 'Encomenda não encontrada.' });
+        }
+
+        return res.status(200).json({ 
+            message: 'Status atualizado!', 
+            encomenda: resultado 
+        });
+
+    } catch (error) {
+        console.error('Erro ao atualizar status de produção:', error);
+        return res.status(500).json({ error: 'Erro interno do servidor.' });
+    }
+};
+
 module.exports = {
     getEncomenda,
     criarEncomenda,
     getFiltraEncomenda,
-    updateEncomenda
+    updateEncomenda,
+    updateStatusProducao
 };
