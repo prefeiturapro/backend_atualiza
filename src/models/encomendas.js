@@ -314,6 +314,7 @@ const atualizaStatusProducao = async (id, status) => {
     return rows[0];
 };
 
+
 module.exports = { 
     buscaEncomendas, 
     gravaEncomenda,
