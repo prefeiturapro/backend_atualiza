@@ -37,7 +37,6 @@ const listaDeProdutos = [
 ];
 
 // --- GRAVAR (INSERT) ---
-// Mantivemos a correção do ID=0 para não travar o banco
 const gravaEncomenda = async (dadosEncomenda) => {
 
     let idClienteFinal = 0;
@@ -58,7 +57,6 @@ const gravaEncomenda = async (dadosEncomenda) => {
             }
         } catch (err) {
             console.error("Erro ao buscar ID do contribuinte:", err);
-            // Em caso de erro na busca, mantém 0 para não travar a venda
         }
     }
 
@@ -102,26 +100,35 @@ const gravaEncomenda = async (dadosEncomenda) => {
     }
 };
 
-// --- BUSCA ENCOMENDAS (COMPLEXA - PARA O PAINEL) ---
-// Essa função restaura a lógica do Painel de Encomendas
+// --- BUSCA ENCOMENDAS (SEGURA E OTIMIZADA) ---
 const buscaEncomendas = async () => {
-    console.log(">>> PROCESSANDO PAINEL DE ENCOMENDAS... <<<");
+    console.log(">>> PROCESSANDO PAINEL DE ENCOMENDAS NOVO (MODO ECONÔMICO) <<<");
 
-    const sql = `SELECT TO_CHAR(dt_abertura, 'DD/MM/YYYY') AS dt_formatada, 
-                 hr_horaenc, nm_nomefantasia, id_ordemservicos, nr_telefone, st_status,
-                 * FROM relatorios.encomendas 
-                 WHERE st_status='1' AND dt_abertura=CURRENT_DATE ORDER BY st_status, hr_horaenc ASC`;
+    // 1. MÁGICA DO JS: Gera a lista de colunas dinamicamente, EXCLUINDO A FOTO
+    // Isso evita erro de digitação e garante que a foto pesada não venha.
+    const colunasSemFoto = listaDeProdutos
+        .filter(coluna => coluna !== 'ds_fototorta') // Remove a foto
+        .join(', '); // Junta tudo com vírgula
+
+    const sql = `
+        SELECT 
+            id_ordemservicos, nm_nomefantasia, hr_horaenc, nr_telefone, st_status, dt_abertura,
+            TO_CHAR(dt_abertura, 'DD/MM/YYYY') AS dt_formatada, 
+            ${colunasSemFoto} 
+        FROM relatorios.encomendas 
+        WHERE st_status='1' AND dt_abertura=CURRENT_DATE 
+        ORDER BY st_status, hr_horaenc ASC
+    `;
 
     try {
         const { rows: encomendas } = await pool.query(sql);
 
         if (encomendas.length === 0) return [];
     
-        console.log(`Encontradas ${encomendas.length} encomendas para processar no painel...`);
+        console.log(`Encontradas ${encomendas.length} encomendas (LEVES) para processar...`);
 
         const promessas = encomendas.map(async (encomenda) => {
             
-            // Controle de Flags (zerado para cada encomenda)
             const controleFlags = {
                 inseriuUm: true, inseriuDois: true, inseriuTres: true,
                 inseriuQuatro: true, inseriuCinco: true, inseriuSeis: true,
@@ -133,9 +140,10 @@ const buscaEncomendas = async () => {
             listaDeProdutos.forEach((nomeDoCampo) => {
                 const valorDoCampo = encomenda[nomeDoCampo];
 
+                // O JavaScript vai tentar ler 'ds_fototorta', vai dar undefined (pois não veio do banco),
+                // e esse IF vai pular ele. Perfeito.
                 if (valorDoCampo && parseFloat(valorDoCampo) !== 0) {
                     
-                    // Chama a lógica de distribuir tarefas
                     const buscaProcessada = buscaResponsavel(
                         encomenda.hr_horaenc, 
                         nomeDoCampo,           
@@ -151,6 +159,9 @@ const buscaEncomendas = async () => {
                             data: encomenda.dt_formatada,  
                             hora: encomenda.hr_horaenc,
                             cliente: encomenda.nm_nomefantasia,
+                            // Campos importantes para chave única do React
+                            id_ordemservicos: encomenda.id_ordemservicos,
+                            st_status: encomenda.st_status,
                             ...item 
                         }));
                     });
@@ -173,15 +184,14 @@ const buscaEncomendas = async () => {
      }
 }
 
-// --- FILTRA ENCOMENDAS (LEVE - PARA A CONSULTA E EDIÇÃO) ---
-// Essa função é usada na tela de "ConsultaEncomenda" e "CadastroEncomenda"
+// --- FILTRA ENCOMENDAS (COMPLETA - PARA EDIÇÃO) ---
 const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abertura) => {
     
-    // Usamos a View para garantir compatibilidade + JOIN para pegar o telefone certo
+    // AQUI MANTEMOS O SELECT * PORQUE NA EDIÇÃO PRECISAMOS DA FOTO
     let sql = `
         SELECT 
             re.*, 
-            TO_CHAR(re.dt_abertura, 'DD/MM/YYYY') AS dt_formatada                                            
+            TO_CHAR(re.dt_abertura, 'DD/MM/YYYY') AS dt_formatada                                        
         FROM relatorios.encomendas re
         LEFT JOIN database.contribuintes c ON c.id_contribuintes = re.id_contribuintes
         WHERE 1=1
@@ -256,14 +266,12 @@ const atualizaEncomenda = async (id, dadosEncomenda) => {
         contador++;
     }
 
-// 4. ADICIONEI 'observacao' AQUI NO UPDATE
     if (dadosEncomenda.observacao !== undefined) {
         colunasParaAtualizar.push(`observacao = $${contador}`);
         valores.push(dadosEncomenda.observacao);
         contador++;
     }
     
-    // Permite trocar o cliente na edição
     if (dadosEncomenda.id_contribuintes) {
         colunasParaAtualizar.push(`id_contribuintes = $${contador}`);
         valores.push(dadosEncomenda.id_contribuintes);
@@ -308,7 +316,6 @@ const atualizaEncomenda = async (id, dadosEncomenda) => {
 };
 
 const atualizaStatusProducao = async (id, status) => {
-    // ATENÇÃO: Confirme se sua variável de conexão se chama 'pool' ou 'client' aqui nesse arquivo
     const { rows } = await pool.query(
         'UPDATE encomendas SET st_producao = $1 WHERE id_encomendas = $2 RETURNING *',
         [status, id]
