@@ -104,57 +104,24 @@ const gravaEncomenda = async (dadosEncomenda) => {
 
 // --- BUSCA ENCOMENDAS (COMPLEXA - PARA O PAINEL) ---
 // Essa função restaura a lógica do Painel de Encomendas
-// --- BUSCA ENCOMENDAS (OTIMIZADA - SEM FOTO) ---
 const buscaEncomendas = async () => {
     console.log(">>> PROCESSANDO PAINEL DE ENCOMENDAS... <<<");
 
-    // ALTERAÇÃO CRUCIAL:
-    // Em vez de *, selecionamos apenas o necessário para o Painel.
-    // REMOVEMOS 'ds_fototorta' para economizar dados!
-    const sql = `
-        SELECT 
-            id_ordemservicos, 
-            id_usuarios,
-            id_contribuintes, 
-            id_empregado,
-            nm_nomefantasia, 
-            nr_telefone, 
-            hr_horaenc, 
-            st_status, 
-            st_producao,
-            observacao,
-            vl_tamanho,
-            -- Trazemos a data formatada
-            TO_CHAR(dt_abertura, 'DD/MM/YYYY') AS dt_formatada,
-            dt_abertura,
-            
-            -- Campos de produtos (para saber qual grupo pertence)
-            vl_risfrango, vl_rispresque, vl_coxinha, vl_pastelcar, vl_pastelban,
-            vl_salsic, vl_quibe, vl_bolquei,
-            ds_decoracao, ds_recheio, ds_topo,
-            vl_bolpamon, vl_bolmilho, vl_bolchoc,
-            vl_assadfra, vl_assadcar,
-            vl_barc, vl_paofr
-            -- Adicione outros campos de valor se precisar da lógica de grupos, 
-            -- mas NÃO adicione ds_fototorta ou base64 aqui.
-
-        FROM relatorios.encomendas 
-        WHERE st_status='1' AND dt_abertura=CURRENT_DATE 
-        ORDER BY st_status, hr_horaenc ASC
-    `;
+    const sql = `SELECT TO_CHAR(dt_abertura, 'DD/MM/YYYY') AS dt_formatada, 
+                 hr_horaenc, nm_nomefantasia, id_ordemservicos, nr_telefone, st_status,
+                 * FROM relatorios.encomendas 
+                 WHERE st_status='1' AND dt_abertura=CURRENT_DATE ORDER BY st_status, hr_horaenc ASC`;
 
     try {
         const { rows: encomendas } = await pool.query(sql);
 
         if (encomendas.length === 0) return [];
     
-        // ... O RESTO DO CÓDIGO PERMANECE IGUAL DAQUI PARA BAIXO ...
-        // (A lógica do map, controleFlags, buscaResponsavel, etc, continua a mesma)
-        
-        console.log(`Encontradas ${encomendas.length} encomendas (LEVES) para processar...`);
+        console.log(`Encontradas ${encomendas.length} encomendas para processar no painel...`);
 
         const promessas = encomendas.map(async (encomenda) => {
             
+            // Controle de Flags (zerado para cada encomenda)
             const controleFlags = {
                 inseriuUm: true, inseriuDois: true, inseriuTres: true,
                 inseriuQuatro: true, inseriuCinco: true, inseriuSeis: true,
@@ -163,15 +130,12 @@ const buscaEncomendas = async () => {
 
             const buscasParaFazer = [];
             
-            // ATENÇÃO: Se listaDeProdutos tiver "ds_fototorta", o loop vai tentar ler undefined.
-            // Isso não gera erro, mas certifique-se de que a lógica de buscaResponsavel 
-            // não depende da foto.
-            
             listaDeProdutos.forEach((nomeDoCampo) => {
                 const valorDoCampo = encomenda[nomeDoCampo];
 
                 if (valorDoCampo && parseFloat(valorDoCampo) !== 0) {
                     
+                    // Chama a lógica de distribuir tarefas
                     const buscaProcessada = buscaResponsavel(
                         encomenda.hr_horaenc, 
                         nomeDoCampo,           
@@ -187,9 +151,6 @@ const buscaEncomendas = async () => {
                             data: encomenda.dt_formatada,  
                             hora: encomenda.hr_horaenc,
                             cliente: encomenda.nm_nomefantasia,
-                            // Passamos o ID para chave única no React
-                            id_ordemservicos: encomenda.id_ordemservicos, 
-                            st_status: encomenda.st_status,
                             ...item 
                         }));
                     });
