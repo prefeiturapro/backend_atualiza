@@ -8,8 +8,10 @@ const { getIDContribuinte } = require("./contribuintes");
 const listaDeProdutos = [
     //salgadinhos de festa
     "vl_risfrango","vl_rispresque","vl_coxinha","vl_pastelcar","vl_pastelban",
-    "vl_salsic","vl_quibe","vl_bolquei", "ds_obssalg",
+    "vl_salsic","vl_quibe","vl_bolquei",
 
+    //, "ds_obssalg"
+    
     //tortas
     "ds_decoracao", "ds_recheio","vl_tamanho","ds_topo","ds_papel","ds_gliter","ds_redonda",
     "ds_quadrada",  "ds_menino","ds_menina","ds_mulher", "ds_homem", "ds_po", "ds_tabuleiro",
