@@ -2,7 +2,7 @@ require("dotenv").config();
 const express = require("express");
 
 const cors = require("cors");
-
+const path = require("path"); // <--- 1. ADICIONE ESSA LINHA NO TOPO
 
 const app = express();
 
@@ -14,6 +14,7 @@ app.use(cors({
     origin: '*' // Depois de ter o domínio, troque '*' pelo 'https://seusite.com.br'
 }));
 
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // === ROTAS ===
 const rotaEncomenda     = require("./src/routes/encomendas"   );
