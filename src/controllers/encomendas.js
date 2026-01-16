@@ -10,8 +10,6 @@ const getEncomenda = async (req, res) => {
 }
 
 // 2. Mudamos o nome da função do Controller para 'criarEncomenda'
-// ARQUIVO: backend/src/controllers/encomendas.js
-
 const criarEncomenda = async (req, res) => {
     console.log("----------------------------------------------");
     console.log("[CONTROLLER] 1. Chegou na função criarEncomenda");
@@ -20,7 +18,7 @@ const criarEncomenda = async (req, res) => {
         const dados = req.body;
         console.log("[CONTROLLER] 2. Dados recebidos do Frontend:", dados);
 
-if (dados.ds_fototorta_base64) {
+        if (dados.ds_fototorta_base64) {
             try {
                 console.log("[CONTROLLER] Convertendo foto Base64...");
                 // Remove o cabeçalho "data:image/jpeg;base64," se existir e pega só o código
@@ -64,9 +62,21 @@ if (dados.ds_fototorta_base64) {
     }
 };
 
+// --- AQUI ESTÁ A ALTERAÇÃO IMPORTANTE ---
 const getFiltraEncomenda = async (req, res) => {
-  const { nr_telefone, nm_nomefantasia, hr_horaenc, dt_abertura } = req.body;
-  const data = await FiltraEncomendas(nr_telefone, nm_nomefantasia, hr_horaenc, dt_abertura)
+  // Agora desestruturamos também o id_ordemservicos e o trazerFoto
+  const { nr_telefone, nm_nomefantasia, hr_horaenc, dt_abertura, id_ordemservicos, trazerFoto } = req.body;
+  
+  // Passamos tudo para o Model atualizado
+  const data = await FiltraEncomendas(
+      nr_telefone, 
+      nm_nomefantasia, 
+      hr_horaenc, 
+      dt_abertura, 
+      id_ordemservicos, // Novo parâmetro para buscar detalhe
+      trazerFoto        // Novo parâmetro para decidir se traz a foto
+  );
+  
   return res.json(data);
 }
 

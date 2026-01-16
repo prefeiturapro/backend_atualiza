@@ -1,5 +1,4 @@
 const pool = require("./connection");
-// IMPORTANTE: Essa importação é vital para o Painel funcionar
 const { buscaResponsavel } = require("./responsavel"); 
 const { getIDContribuinte } = require("./contribuintes");
 
@@ -57,6 +56,7 @@ const gravaEncomenda = async (dadosEncomenda) => {
             }
         } catch (err) {
             console.error("Erro ao buscar ID do contribuinte:", err);
+            // Em caso de erro na busca, mantém 0 para não travar a venda
         }
     }
 
@@ -184,13 +184,35 @@ const buscaEncomendas = async () => {
      }
 }
 
-// --- FILTRA ENCOMENDAS (COMPLETA - PARA EDIÇÃO) ---
-const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abertura) => {
+// --- FILTRA ENCOMENDAS (AGORA INTELIGENTE E CORRIGIDA) ---
+// Adicionei parâmetros opcionais no final: id_ordemservicos e trazerFoto
+const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abertura, id_ordemservicos, trazerFoto = false) => {
     
-    // AQUI MANTEMOS O SELECT * PORQUE NA EDIÇÃO PRECISAMOS DA FOTO
+    // LÓGICA DE COLUNAS: 
+    // Se trazerFoto for false, usamos a lista limpa (sem foto). Se for true (detalhes), usamos SELECT * (que inclui a foto).
+    let selectClause = "re.*"; // Padrão antigo (pesado, usado apenas quando clicar no card)
+    
+    // Verifica se trazerFoto é falso (ou string "false" caso venha do JSON)
+    if (trazerFoto === false || trazerFoto === "false") {
+        
+        // Modo LEVE: Monta string com todas as colunas MENOS a foto
+        const colunasSemFoto = listaDeProdutos
+            .filter(coluna => coluna !== 'ds_fototorta')
+            .join(', ');
+            
+        // CORREÇÃO: Removi 're.id_empregado' pois estava dando erro.
+        // Adicionamos apenas as colunas que temos certeza que existem na view.
+        selectClause = `
+            re.id_ordemservicos, re.id_usuarios, re.id_contribuintes,
+            re.nm_nomefantasia, re.nr_telefone, re.hr_horaenc, re.dt_abertura, 
+            re.st_status, re.st_producao, re.observacao,
+            ${colunasSemFoto}
+        `;
+    }
+
     let sql = `
         SELECT 
-            re.*, 
+            ${selectClause}, 
             TO_CHAR(re.dt_abertura, 'DD/MM/YYYY') AS dt_formatada                                        
         FROM relatorios.encomendas re
         LEFT JOIN database.contribuintes c ON c.id_contribuintes = re.id_contribuintes
@@ -222,6 +244,13 @@ const FiltraEncomendas = async (nr_telefone, nm_nomefantasia, hr_horaenc, dt_abe
     if (dt_abertura && dt_abertura.trim() !== "") {
         sql += ` AND re.dt_abertura = $${contador}`;
         valores.push(dt_abertura);
+        contador++;
+    }
+
+    // NOVO: Filtro por ID (para buscar o detalhe da torta ao clicar)
+    if (id_ordemservicos) {
+        sql += ` AND re.id_ordemservicos = $${contador}`;
+        valores.push(id_ordemservicos);
         contador++;
     }
 
