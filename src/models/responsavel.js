@@ -76,8 +76,8 @@ async function buscaResponsavel(hora, campo, valorcampo, controleFlags) {
 
             // === ID 5 ===
             else if (linha.id_empregados === 5) {
-                if (controleFlags.inseriuQuatro === true) {
-                    controleFlags.inseriuQuatro = false;
+                if (controleFlags.inseriuCinco === true) {
+                    controleFlags.inseriuCinco = false;
                     return {
                         id_empregado: linha.id_empregados,
                         nm_empregado: linha.nm_nomefantasia,
@@ -89,8 +89,8 @@ async function buscaResponsavel(hora, campo, valorcampo, controleFlags) {
 
             // === ID 6 ===
             else if (linha.id_empregados === 6) {
-                if (controleFlags.inseriuQuatro === true) {
-                    controleFlags.inseriuQuatro = false;
+                if (controleFlags.inseriuSeis === true) {
+                    controleFlags.inseriuSeis = false;
                     return {
                         id_empregado: linha.id_empregados,
                         nm_empregado: linha.nm_nomefantasia,
@@ -102,8 +102,8 @@ async function buscaResponsavel(hora, campo, valorcampo, controleFlags) {
 
             // === ID 7 ===
             else if (linha.id_empregados === 7) {
-                if (controleFlags.inseriuQuatro === true) {
-                    controleFlags.inseriuQuatro = false;
+                if (controleFlags.inseriuSete === true) {
+                    controleFlags.inseriuSete = false;
                     return {
                         id_empregado: linha.id_empregados,
                         nm_empregado: linha.nm_nomefantasia,
@@ -114,8 +114,8 @@ async function buscaResponsavel(hora, campo, valorcampo, controleFlags) {
 
             // === ID 8 ===
             else if (linha.id_empregados === 8) {
-                if (controleFlags.inseriuQuatro === true) {
-                    controleFlags.inseriuQuatro = false;
+                if (controleFlags.inseriuOito === true) {
+                    controleFlags.inseriuOito = false;
                     return {
                         id_empregado: linha.id_empregados,
                         nm_empregado: linha.nm_nomefantasia,
@@ -126,8 +126,8 @@ async function buscaResponsavel(hora, campo, valorcampo, controleFlags) {
 
             // === ID 9 ===
             else if (linha.id_empregados === 9) {
-                if (controleFlags.inseriuQuatro === true) {
-                    controleFlags.inseriuQuatro = false;
+                if (controleFlags.inseriuNove === true) {
+                    controleFlags.inseriuNove = false;
                     return {
                         id_empregado: linha.id_empregados,
                         nm_empregado: linha.nm_nomefantasia,
@@ -138,8 +138,8 @@ async function buscaResponsavel(hora, campo, valorcampo, controleFlags) {
 
             // === ID 10 ===
             else if (linha.id_empregados === 10) {
-                if (controleFlags.inseriuQuatro === true) {
-                    controleFlags.inseriuQuatro = false;
+                if (controleFlags.inseriuDez === true) {
+                    controleFlags.inseriuDez = false;
                     return {
                         id_empregado: linha.id_empregados,
                         nm_empregado: linha.nm_nomefantasia,
