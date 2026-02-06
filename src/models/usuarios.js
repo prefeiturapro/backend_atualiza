@@ -15,15 +15,6 @@ async function buscaUsuarios(nome, senha) {
     try {
         const { rows } = await pool.query(sql, [nome, senha]);
         
-        // LOG 2: Ver o resultado do banco
-        console.log(`[MODEL] Resultado do SQL: Encontrou ${rows.length} usuário(s).`);
-        
-        if (rows.length > 0) {
-            console.log(`[MODEL] SUCESSO! Usuário encontrado: ID ${rows[0].id || 'S/ ID'}`);
-        } else {
-            console.log("[MODEL] FALHA: Nenhum usuário bateu com esse login e senha.");
-        }
-        console.log("---------------------------------------------------");
 
         return rows;        
     } catch (error) {

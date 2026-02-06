@@ -22,7 +22,7 @@ const pool = new Pool({
     connectionTimeoutMillis: 10000, // Se demorar mais de 2s para conectar, desiste (evita travamento)
 });
 
-// --- O PULO DO GATO (AIRBAG) ---
+
 // Se o Neon derrubar uma conexão inativa, esse evento captura o erro
 // e impede que o seu backend (Node.js) crashe inteiro.
 pool.on('error', (err, client) => {
@@ -32,7 +32,7 @@ pool.on('error', (err, client) => {
 // Teste rápido ao iniciar
 pool.connect()
     .then(client => {
-        console.log('✅ Conectado ao Banco de Dados (Neon) com sucesso!');
+        console.log('✅ Conectado ao Banco de Dados com sucesso!');
         client.release(); // Solta a conexão de teste imediatamente
     })
     .catch((err) => console.error('❌ Erro ao conectar ao Banco:', err.message));
