@@ -1,7 +1,8 @@
 const { atualizarContribuinte, extrairTextoDocumento } = require("../models/dadoscontribuintes");
-const pool = require("../models/connection"); // Importação necessária para as consultas da Prefeitura
-const transporter = require("../config/mail"); // Para notificações de cancelamento
+const pool = require("../models/connection"); 
+const transporter = require("../config/mail"); 
 const twilio = require('twilio');
+const axios = require('axios');
 
 /**
  * Função para processar o comprovante via OCR ou Extração Direta
@@ -56,42 +57,58 @@ const processarComprovante = async (req, res) => {
             }
         }
 
-        // --- 2. LÓGICA DE EXTRAÇÃO ANCORADA ---
+        // --- 2. LÓGICA DE EXTRAÇÃO DE ENDEREÇO (REESCRITA PARA PRECISÃO) ---
         const indexNome = textoLimpo.indexOf(nomeCandidato);
         const textoAposNome = indexNome !== -1 ? textoLimpo.substring(indexNome) : textoLimpo;
         const blocoEndereco = textoAposNome.substring(0, 450); 
 
-        let matchRua, matchNumero, matchBairro, matchCep;
+        let matchRuaStr = "", matchNumStr = "", matchBairroStr = "CENTRO", matchCepStr = "", matchCpfStr = "";
+
+        const matchCpf = textoLimpo.match(/(?:CPF|CNPJ)[:\s]*([\d\.\-\/]{11,18})/i);
+        if (matchCpf) matchCpfStr = matchCpf[1].replace(/\D/g, "");
 
         if (isCelesc) {
-            // LÓGICA CELESC: Captura Rua e Número
-            const regexCelescEnd = blocoEndereco.match(/ENDERECO[:\s]+([A-ZÀ-Ú\s\d]+?)\s+(\d{1,5})/i);
+            // REGEX PARA CELESC: Busca tudo entre "ENDERECO:" e o primeiro grupo de números que tenha espaço antes
+            // Isso isola "PRES JUSCELINO" ou "ARARANGUA" perfeitamente.
+            const regexCelescRua = blocoEndereco.match(/ENDERECO[:\s]+([A-ZÀ-Ú\s\.\-]+?)\s+(\d{1,5})/i);
             
-            if (regexCelescEnd) {
-                matchRua = { 1: regexCelescEnd[1].replace(/\sVL$/, "").trim() };
-                matchNumero = { 1: regexCelescEnd[2] };
-                
-                // BUSCA DE BAIRRO CELESC (BLINDADA)
-                const regexBairroCelesc = blocoEndereco.match(/(?:\d{1,5})\s+(?:LD|LT|QD|QUADRA|LOTE)?\s?\d*\s?-?\s?([A-ZÀ-Ú\s]{3,20})(?:\s+-|CEP|CIDADE|$|\n)/i);
-                
-                if (regexBairroCelesc && !regexBairroCelesc[1].includes("CONSULTE") && !regexBairroCelesc[1].includes("CHAVE")) {
-                    matchBairro = { 1: regexBairroCelesc[1].trim() };
-                } else {
-                    const fallbackBairro = blocoEndereco.match(/-\s+([A-ZÀ-Ú\s]+?)\s+CEP/i);
-                    matchBairro = { 1: fallbackBairro ? fallbackBairro[1].trim() : "CENTRO" };
+            if (regexCelescRua) {
+                matchRuaStr = regexCelescRua[1].trim(); // Pega o grupo 1 (Rua)
+                matchNumStr = regexCelescRua[2];      // Pega o grupo 2 (Número)
+            } else {
+                // Fallback caso o padrão acima falhe
+                const linhaEnd = blocoEndereco.match(/ENDERECO[:\s]+(.+?)(?:\s+CEP|$)/i);
+                if (linhaEnd) {
+                    const textoEnd = linhaEnd[1];
+                    const findNum = textoEnd.match(/(\d{1,5})/);
+                    if (findNum) {
+                        matchNumStr = findNum[1];
+                        matchRuaStr = textoEnd.split(matchNumStr)[0].trim();
+                    }
                 }
             }
+
+            // Bairro: Pega o que está após o último hífen antes do CEP
+            const findBairro = blocoEndereco.match(/-\s+([A-ZÀ-Ú\s]+?)\s+CEP/i);
+            if (findBairro) matchBairroStr = findBairro[1].trim();
+
         } else {
-            // Padrão Cooperaliança
-            matchRua = blocoEndereco.match(/(?:RUA|AV|AVENIDA|ESTRADA)[:\s]+([A-ZÀ-Ú\s\d]+?)(?:\s\(|,)/i);
-            matchNumero = blocoEndereco.match(/,\s*(\d{1,5})/);
-            matchBairro = blocoEndereco.match(/([A-ZÀ-Ú\s]+)\s\/\s(?:BALNEÁRIO|CRICIÚMA|IÇARA)/i);
+            // Padrão Cooperaliança ou Outros
+            const matchRua = blocoEndereco.match(/(?:RUA|AV|AVENIDA|ESTRADA)[:\s]+([A-ZÀ-Ú\s\d]+?)(?:\s\(|,)/i);
+            const matchNumero = blocoEndereco.match(/,\s*(\d{1,5})/);
+            const matchBairro = blocoEndereco.match(/([A-ZÀ-Ú\s]+)\s\/\s(?:BALNEÁRIO|CRICIÚMA|IÇARA)/i);
+            
+            matchRuaStr = matchRua ? matchRua[1].trim() : "";
+            matchNumStr = matchNumero ? matchNumero[1].trim() : "";
+            matchBairroStr = matchBairro ? matchBairro[1].trim() : "CENTRO";
         }
 
-        // CEP e Cidade
-        matchCep = blocoEndereco.match(/CEP[:\s]+(\d{2}\s?\d{3}-?\d{3})/i) || 
-                   blocoEndereco.match(/(\d{5}-?\d{3})/);
+        // CEP
+        const matchCep = blocoEndereco.match(/CEP[:\s]+(\d{2}\s?\d{3}-?\d{3})/i) || 
+                         blocoEndereco.match(/(\d{5}-?\d{3})/);
+        matchCepStr = matchCep ? (matchCep[1] || matchCep[0]).replace(/\D/g, "") : "";
 
+        // Cidade
         let cidadeFinal = "CRICIÚMA";
         if (blocoEndereco.includes("RINCÃO") || blocoEndereco.includes("RINCAO")) {
             cidadeFinal = "BALNEÁRIO RINCÃO";
@@ -101,10 +118,11 @@ const processarComprovante = async (req, res) => {
 
         const dadosExtraidos = {
             nm_contribuinte: nomeCandidato,
-            nr_cep_atual: matchCep ? (matchCep[1] || matchCep[0]).replace(/\D/g, "") : "",
-            nm_rua_atual: matchRua ? matchRua[1].trim() : "",
-            ds_numero_atual: matchNumero ? matchNumero[1].trim() : "",
-            ds_bairro_atual: matchBairro ? matchBairro[1].trim() : "CENTRO",
+            nr_cpf_atual: matchCpfStr,
+            nr_cep_atual: matchCepStr,
+            nm_rua_atual: matchRuaStr,
+            ds_numero_atual: matchNumStr,
+            ds_bairro_atual: matchBairroStr,
             ds_cidade_atual: cidadeFinal,
             ds_obs: `Extraído via ${isCelesc ? 'Celesc' : 'Cooperaliança'} (${isPdf ? 'PDF' : 'Imagem'})`
         };
@@ -113,120 +131,93 @@ const processarComprovante = async (req, res) => {
 
     } catch (error) {
         console.error("Erro no Controller OCR:", error);
-        return res.status(500).json({ erro: "Erro interno ao processar os dados do documento." });
+        return res.status(500).json({ erro: "Erro interno no OCR." });
     }
 };
 
 const salvarDadosContribuinte = async (req, res) => {
     const dados = req.body;
-    if (!dados.cd_contribuinte) return res.status(400).json({ erro: "Código do contribuinte é obrigatório." });
-
+    if (!dados.cd_contribuinte) return res.status(400).json({ erro: "Código obrigatório." });
     try {
         await atualizarContribuinte(dados);
-        return res.json({ mensagem: "Dados atualizados com sucesso!" });
+        return res.json({ mensagem: "Sucesso!" });
     } catch (error) {
-        console.error("Erro ao salvar:", error);
-        return res.status(500).json({ erro: "Erro ao salvar dados no banco." });
+        console.error("Erro salvar:", error);
+        return res.status(500).json({ erro: "Erro banco." });
     }
 };
 
-// ============================================================
-// --- NOVAS FUNÇÕES PARA O USUÁRIO DA PREFEITURA ---
-// ============================================================
-
-/**
- * Lista todos os pedidos que aguardam validação da Prefeitura
- */
+// --- FUNÇÕES DE ADMINISTRAÇÃO ---
 const listarPedidosPendentes = async (req, res) => {
-    const { status } = req.query; // Filtro: TODOS, N (Original), S (Alterado)
-    
-    let sql = `
-        SELECT 
-            id_dados_contribuintes, cd_reduzido_imovel, ds_inscricao_imovel, 
-            cd_contribuinte, nm_contribuinte, st_editado_manual,
-            nm_rua_extr, ds_numero_extr, nr_cep_extr, ds_bairro_extr, ds_cidade_extr,
-            nm_rua_atual, ds_numero_atual, nr_cep_atual, ds_bairro_atual, ds_cidade_atual,
-            nr_telefone_atual, ds_email_atual, dt_atualizacao, hr_atualizacao, ds_protocolo
-        FROM database.dados_contribuintes
-        WHERE st_validado_prefeitura IS NULL
-    `;
-
+    const { status } = req.query; 
+    let sql = `SELECT * FROM database.dados_contribuintes WHERE st_validado_prefeitura = 'N'`;
     const params = [];
     if (status && status !== 'TODOS') {
         sql += ` AND st_editado_manual = $1`;
         params.push(status);
     }
-
     sql += ` ORDER BY dt_atualizacao DESC, hr_atualizacao DESC`;
-
     try {
         const { rows } = await pool.query(sql, params);
         res.json(rows);
     } catch (error) {
-        console.error("Erro ao listar pedidos:", error);
-        res.status(500).json({ erro: "Erro ao buscar pedidos na base." });
+        res.status(500).json({ erro: "Erro listar." });
     }
 };
 
-/**
- * Executa a atualização definitiva ou cancela o pedido notificando o contribuinte
- */
 const validarPedidoPrefeitura = async (req, res) => {
     const { id, acao } = req.body; 
-
     try {
-        const pedidoQuery = await pool.query(
-            "SELECT ds_protocolo, nr_telefone_atual, ds_email_atual, nm_contribuinte FROM database.dados_contribuintes WHERE id_dados_contribuintes = $1", 
-            [id]
-        );
-        
-        if (pedidoQuery.rows.length === 0) {
-            return res.status(404).json({ erro: "Pedido não encontrado." });
-        }
-
+        const pedidoQuery = await pool.query("SELECT * FROM database.dados_contribuintes WHERE id_dados_contribuintes = $1", [id]);
+        if (pedidoQuery.rows.length === 0) return res.status(404).json({ erro: "Não encontrado." });
         const pedido = pedidoQuery.rows[0];
 
         if (acao === 'CANCELAR') {
-            // 1. Notificação SMS via Twilio
             try {
                 const client = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
                 await client.messages.create({
-                    body: `AtualizaAI: Ola ${pedido.nm_contribuinte}, seu pedido de atualizacao ${pedido.ds_protocolo} foi indeferido. Verifique seu e-mail.`,
+                    body: `AtualizaAI: Ola ${pedido.nm_contribuinte}, seu pedido foi indeferido.`,
                     to: `+55${pedido.nr_telefone_atual.replace(/\D/g, "")}`,
                     from: process.env.TWILIO_NUMBER
                 });
-            } catch (err) { console.error("Erro ao enviar SMS de cancelamento:", err.message); }
+            } catch (err) { console.error("Erro SMS:", err.message); }
 
-            // 2. Notificação E-mail via Nodemailer
             if (pedido.ds_email_atual) {
                 try {
                     await transporter.sendMail({
-                        from: `"Prefeitura de Paraíba do Sul" <${process.env.EMAIL_USER}>`,
+                        from: `"Prefeitura" <${process.env.EMAIL_USER}>`,
                         to: pedido.ds_email_atual,
-                        subject: "Pedido de Atualização Indeferido",
-                        html: `<p>Olá ${pedido.nm_contribuinte}, seu pedido de protocolo <b>${pedido.ds_protocolo}</b> foi cancelado pela administração municipal.</p>`
+                        subject: "Pedido Indeferido",
+                        html: `<p>Olá ${pedido.nm_contribuinte}, seu pedido foi cancelado.</p>`
                     });
-                } catch (err) { console.error("Erro ao enviar E-mail de cancelamento:", err.message); }
+                } catch (err) { console.error("Erro Email:", err.message); }
             }
-
             await pool.query("UPDATE database.dados_contribuintes SET st_validado_prefeitura = 'C' WHERE id_dados_contribuintes = $1", [id]);
-            return res.json({ sucesso: true, mensagem: "Pedido cancelado e notificações enviadas." });
-
+            return res.json({ sucesso: true });
         } else {
-            // AÇÃO: EXECUTAR
             await pool.query("UPDATE database.dados_contribuintes SET st_validado_prefeitura = 'S' WHERE id_dados_contribuintes = $1", [id]);
-            return res.json({ sucesso: true, mensagem: "Atualização realizada!" });
+            return res.json({ sucesso: true });
         }
-
     } catch (error) {
-        console.error("Erro ao processar pedido:", error);
-        res.status(500).json({ erro: "Erro interno no processamento da validação." });
+        res.status(500).json({ erro: "Erro interno." });
     }
 };
+
+async function validarCpfReceita(req, res) {
+    const { cpf } = req.params;
+    const token = "199026855WVdHwXRyQK359336952"; 
+    try {
+        const response = await axios.get(`https://ws.hubdodesenvolvedor.com.br/v2/nome_cpf/?cpf=${cpf}&token=${token}`);
+        return res.json(response.data);
+    } catch (error) {
+        return res.status(500).json({ status: false });
+    }
+}
 
 module.exports = { 
     salvarDadosContribuinte, 
     processarComprovante,
     listarPedidosPendentes,
-    validarPedidoPrefeitura
+    validarPedidoPrefeitura,
+    validarCpfReceita
 };

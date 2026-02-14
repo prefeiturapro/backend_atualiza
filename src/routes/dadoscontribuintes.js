@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const multer = require("multer"); 
+const contribuinteController = require('../controllers/dadoscontribuintes');
 // CORREÇÃO AQUI: Importamos as funções específicas diretamente
 const { 
     salvarDadosContribuinte, 
@@ -18,6 +19,7 @@ router.post("/validar-pedido", validarPedidoPrefeitura);
 
 // Rota original para salvar os dados no banco
 router.post("/salvar", salvarDadosContribuinte);
+router.get('/validar-cpf/:cpf', contribuinteController.validarCpfReceita);
 
 // Rota de OCR
 router.post("/processar-comprovante", upload.single("comprovante"), processarComprovante);
