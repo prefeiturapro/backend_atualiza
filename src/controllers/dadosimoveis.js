@@ -1,28 +1,33 @@
-const { buscaImoveis } = require("../models/dadosimoveis");
+const { buscaImoveisDinamica } = require("../models/dadosimoveis");
 const pool = require("../models/connection"); // Importe o pool aqui para a busca direta
 
 const dadosimoveis = async (req, res) => {
-    // Agora aceitamos também o 'reduzido'
-    const { inscricao, cpf, reduzido } = req.body;
+    // Captura todos os campos possíveis enviados pelo formulário dinâmico
+    const { 
+        ds_inscricao, 
+        nr_cpf_resp, 
+        cd_reduzido, 
+        cd_responsavel, 
+        nm_responsavel,
+        reduzido // campo usado pelo Admin
+    } = req.body;
 
     try {
         let dados;
 
+        // Se houver 'reduzido' vindo da busca direta do Admin
         if (reduzido) {
-            // Busca direta para o Admin usando o código reduzido
             const sqlAdmin = `SELECT * FROM database.dados_imoveis WHERE cd_reduzido = $1`;
             const result = await pool.query(sqlAdmin, [reduzido]);
             dados = result.rows;
         } else {
-            // Busca original do Contribuinte
-            if (!inscricao || !cpf) {
-                return res.status(400).json({ erro: "Inscrição e CPF são obrigatórios." });
-            }
-            dados = await buscaImoveis(inscricao, cpf);
+            // Busca dinâmica para o Contribuinte baseada no que ele preencheu
+            // Passamos o objeto completo para o Model
+            dados = await buscaImoveisDinamica(req.body);
         }
 
         if (!dados || dados.length === 0) {
-            return res.status(404).json({ erro: "Cadastro não encontrado." });
+            return res.status(404).json({ erro: "Cadastro não encontrado com os dados informados." });
         }
 
         const imovel = dados[0];
@@ -42,7 +47,7 @@ const dadosimoveis = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Erro na busca:", error);
+        console.error("Erro na busca de imóveis:", error);
         return res.status(500).json({ erro: "Erro interno do servidor." });
     }
 }

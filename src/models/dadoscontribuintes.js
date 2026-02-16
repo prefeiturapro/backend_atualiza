@@ -58,8 +58,6 @@ async function extrairTextoDocumento(buffer, isPdf) {
  * AJUSTADO: Correção de tipos e alinhamento de parâmetros
  */
 async function atualizarContribuinte(dados) {
-    // 1. Corrigimos hr_atualizacao para receber CURRENT_TIME
-    // 2. Alinhamos a contagem: existem 26 colunas listadas abaixo, logo precisamos de $1 até $26
     const sql = `
         INSERT INTO database.dados_contribuintes (
             ds_inscricao_imovel,    -- $1
@@ -76,23 +74,26 @@ async function atualizarContribuinte(dados) {
             ds_cidade_atual,        -- $12
             ds_email_atual,         -- $13
             ds_obs,                 -- $14
-            ds_loteamento_atual,    -- $15
-            ds_edificio_atual,      -- $16
-            ds_protocolo,           -- $17
-            st_editado_manual,      -- $18
-            nm_rua_extr,            -- $19
-            tp_rua_extr,            -- $20
-            ds_numero_extr,         -- $21
-            nr_cep_extr,            -- $22
-            ds_bairro_extr,         -- $23
-            ds_cidade_extr,         -- $24
-            st_responsavel,         -- $25
+            ds_protocolo,           -- $15
+            st_editado_manual,      -- $16
+            nm_rua_extr,            -- $17
+            tp_rua_extr,            -- $18
+            ds_numero_extr,         -- $19
+            nr_cep_extr,            -- $20
+            ds_bairro_extr,         -- $21
+            ds_cidade_extr,         -- $22
+            st_responsavel,         -- $23
+            ds_loteamento_atual,    -- $24
+            ds_edificio_atual,      -- $25
+            ds_complemento_atual,   -- $26
+            ds_loteamento_extr,     -- $27
+            ds_edificio_extr,       -- $28
+            ds_complemento_extr,    -- $29
             dt_atualizacao,         -- Gerado via SQL
             hr_atualizacao          -- Gerado via SQL
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-            CURRENT_DATE, 
-            LOCALTIME(0) -- LOCALTIME(0) costuma ser aceito por tipos de hora customizados no Postgres
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 
+            $26, $27, $28, $29, CURRENT_DATE, LOCALTIME(0)
         )
     `;
 
@@ -111,27 +112,31 @@ async function atualizarContribuinte(dados) {
         dados.ds_cidade_atual,       // $12
         dados.ds_email_atual,        // $13
         dados.ds_obs,                // $14
-        dados.ds_loteamento_atual,   // $15
-        dados.ds_edificio_atual,     // $16
-        dados.ds_protocolo,          // $17
-        dados.st_editado_manual,     // $18
-        dados.nm_rua_extr,           // $19
-        'RUA',                       // $20
-        dados.ds_numero_extr,        // $21
-        dados.nr_cep_extr,           // $23
-        dados.ds_bairro_extr,        // $23
-        dados.ds_cidade_extr,        // $24
-        dados.st_responsavel         // $25
+        dados.ds_protocolo,          // $15
+        dados.st_editado_manual,     // $16
+        dados.nm_rua_extr,           // $17
+        'RUA',                       // $18
+        dados.ds_numero_extr,        // $19
+        dados.nr_cep_extr,           // $20
+        dados.ds_bairro_extr,        // $21
+        dados.ds_cidade_extr,        // $22
+        dados.st_responsavel,        // $23
+        dados.ds_loteamento_atual,   // $24
+        dados.ds_edificio_atual,     // $25
+        dados.ds_complemento_atual,  // $26
+        dados.ds_loteamento_extr,    // $27
+        dados.ds_edificio_extr,      // $28
+        dados.ds_complemento_extr    // $29
     ];
 
     try {
         await pool.query(sql, values);
         return { sucesso: true };
-    } catch (error) {
-        console.error("Erro ao inserir novo registro de contribuinte no banco:", error);
-        throw error;
+        } catch (error) {
+            console.error("Erro ao inserir novo registro de contribuinte no banco:", error);
+            throw error;
+        }
     }
-}
 
 module.exports = {
     atualizarContribuinte,

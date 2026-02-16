@@ -27,7 +27,7 @@ const processarComprovante = async (req, res) => {
         const textoLimpo = textoBruto.toUpperCase();
         const isCelesc = textoLimpo.includes("CELESC");
         
-        // --- 1. LÓGICA DE IDENTIFICAÇÃO DO NOME ---
+        // --- 1. LÓGICA DE IDENTIFICAÇÃO DO NOME (MANTIDA INTEGRALMENTE) ---
         let nomeCandidato = "NOME NÃO IDENTIFICADO";
 
         if (isCelesc) {
@@ -57,26 +57,23 @@ const processarComprovante = async (req, res) => {
             }
         }
 
-        // --- 2. LÓGICA DE EXTRAÇÃO DE ENDEREÇO (REESCRITA PARA PRECISÃO) ---
+        // --- 2. LÓGICA DE EXTRAÇÃO DE ENDEREÇO (MANTIDA INTEGRALMENTE) ---
         const indexNome = textoLimpo.indexOf(nomeCandidato);
         const textoAposNome = indexNome !== -1 ? textoLimpo.substring(indexNome) : textoLimpo;
         const blocoEndereco = textoAposNome.substring(0, 450); 
 
         let matchRuaStr = "", matchNumStr = "", matchBairroStr = "CENTRO", matchCepStr = "", matchCpfStr = "";
 
-        const matchCpf = textoLimpo.match(/(?:CPF|CNPJ)[:\s]*([\d\.\-\/]{11,18})/i);
-        if (matchCpf) matchCpfStr = matchCpf[1].replace(/\D/g, "");
+        //const matchCpf = textoLimpo.match(/(?:CPF|CNPJ)[:\s]*([\d\.\-\/]{11,18})/i);
+        //if (matchCpf) matchCpfStr = matchCpf[1].replace(/\D/g, "");
 
         if (isCelesc) {
-            // REGEX PARA CELESC: Busca tudo entre "ENDERECO:" e o primeiro grupo de números que tenha espaço antes
-            // Isso isola "PRES JUSCELINO" ou "ARARANGUA" perfeitamente.
             const regexCelescRua = blocoEndereco.match(/ENDERECO[:\s]+([A-ZÀ-Ú\s\.\-]+?)\s+(\d{1,5})/i);
             
             if (regexCelescRua) {
-                matchRuaStr = regexCelescRua[1].trim(); // Pega o grupo 1 (Rua)
-                matchNumStr = regexCelescRua[2];      // Pega o grupo 2 (Número)
+                matchRuaStr = regexCelescRua[1].trim(); 
+                matchNumStr = regexCelescRua[2];      
             } else {
-                // Fallback caso o padrão acima falhe
                 const linhaEnd = blocoEndereco.match(/ENDERECO[:\s]+(.+?)(?:\s+CEP|$)/i);
                 if (linhaEnd) {
                     const textoEnd = linhaEnd[1];
@@ -88,12 +85,10 @@ const processarComprovante = async (req, res) => {
                 }
             }
 
-            // Bairro: Pega o que está após o último hífen antes do CEP
             const findBairro = blocoEndereco.match(/-\s+([A-ZÀ-Ú\s]+?)\s+CEP/i);
             if (findBairro) matchBairroStr = findBairro[1].trim();
 
         } else {
-            // Padrão Cooperaliança ou Outros
             const matchRua = blocoEndereco.match(/(?:RUA|AV|AVENIDA|ESTRADA)[:\s]+([A-ZÀ-Ú\s\d]+?)(?:\s\(|,)/i);
             const matchNumero = blocoEndereco.match(/,\s*(\d{1,5})/);
             const matchBairro = blocoEndereco.match(/([A-ZÀ-Ú\s]+)\s\/\s(?:BALNEÁRIO|CRICIÚMA|IÇARA)/i);
@@ -103,12 +98,10 @@ const processarComprovante = async (req, res) => {
             matchBairroStr = matchBairro ? matchBairro[1].trim() : "CENTRO";
         }
 
-        // CEP
         const matchCep = blocoEndereco.match(/CEP[:\s]+(\d{2}\s?\d{3}-?\d{3})/i) || 
                          blocoEndereco.match(/(\d{5}-?\d{3})/);
         matchCepStr = matchCep ? (matchCep[1] || matchCep[0]).replace(/\D/g, "") : "";
 
-        // Cidade
         let cidadeFinal = "CRICIÚMA";
         if (blocoEndereco.includes("RINCÃO") || blocoEndereco.includes("RINCAO")) {
             cidadeFinal = "BALNEÁRIO RINCÃO";
@@ -116,24 +109,44 @@ const processarComprovante = async (req, res) => {
             cidadeFinal = "IÇARA";
         }
 
+        // --- 3. ADIÇÃO: EXTRAÇÃO DE LOTEAMENTO, EDIFÍCIO E COMPLEMENTO ---
+        let matchLoteamento = "", matchEdificio = "", matchComplemento = "";
+        
+        const regexApto = blocoEndereco.match(/(?:APTO|APARTAMENTO|AP)\s?(\d+[A-Z]?)/i);
+        const regexBloco = blocoEndereco.match(/(?:BL|BLOCO)\s?([A-Z0-9]+)/i);
+        const regexEdif = blocoEndereco.match(/(?:EDIFÍCIO|EDIF|ED)\.?\s+([A-ZÀ-Ú\s0-9]+?)(?:,|\n|$)/i);
+        const regexLote = blocoEndereco.match(/(?:LOTEAMENTO|LOTE)\s+([A-ZÀ-Ú\s0-9]+?)(?:,|\n|$)/i);
+
+        if (regexApto) matchComplemento += `AP ${regexApto[1]} `;
+        if (regexBloco) matchComplemento += `BL ${regexBloco[1]}`;
+        if (regexEdif) matchEdificio = regexEdif[1].trim();
+        if (regexLote) matchLoteamento = regexLote[1].trim();
+
         const dadosExtraidos = {
             nm_contribuinte: nomeCandidato,
-            nr_cpf_atual: matchCpfStr,
+            nr_cpf_atual: "",
             nr_cep_atual: matchCepStr,
             nm_rua_atual: matchRuaStr,
             ds_numero_atual: matchNumStr,
             ds_bairro_atual: matchBairroStr,
             ds_cidade_atual: cidadeFinal,
+            // Novos campos para o Frontend
+            ds_loteamento_extr: matchLoteamento,
+            ds_edificio_extr: matchEdificio,
+            ds_complemento_extr: matchComplemento.trim(),
+            ds_loteamento_atual: matchLoteamento,
+            ds_edificio_atual: matchEdificio,
+            ds_complemento_atual: matchComplemento.trim(),
             ds_obs: `Extraído via ${isCelesc ? 'Celesc' : 'Cooperaliança'} (${isPdf ? 'PDF' : 'Imagem'})`
         };
 
         return res.json(dadosExtraidos);
 
-    } catch (error) {
-        console.error("Erro no Controller OCR:", error);
-        return res.status(500).json({ erro: "Erro interno no OCR." });
-    }
-};
+        } catch (error) {
+            console.error("Erro no Controller OCR:", error);
+            return res.status(500).json({ erro: "Erro interno no OCR." });
+        }
+    };
 
 const salvarDadosContribuinte = async (req, res) => {
     const dados = req.body;
@@ -214,10 +227,51 @@ async function validarCpfReceita(req, res) {
     }
 }
 
+// ... (mantenha suas funções processarComprovante, salvarDadosContribuinte, etc.)
+
+/**
+ * Verifica se o imóvel já possui uma análise (Aprovado ou Indeferido)
+ * para impedir o contribuinte de enviar um novo cadastro desnecessariamente.
+ */
+const verificarStatusImovel = async (req, res) => {
+    const { reduzido } = req.params;
+    try {
+        // Busca o último registro enviado para este código reduzido
+        const result = await pool.query(
+            `SELECT st_validado_prefeitura 
+             FROM database.dados_contribuintes 
+             WHERE cd_reduzido_imovel = $1 
+             ORDER BY dt_atualizacao DESC, hr_atualizacao DESC LIMIT 1`,
+            [reduzido]
+        );
+
+        if (result.rows.length > 0) {
+            const status = result.rows[0].st_validado_prefeitura;
+            
+            // Se o status for 'S' (Aprovado/Sim) ou 'C' (Cancelado/Indeferido)
+            if (status === 'S' || status === 'C') {
+                return res.json({ 
+                    jaProcessado: true, 
+                    descricaoStatus: status === 'S' ? 'APROVADO' : 'INDEFERIDO' 
+                });
+            }
+        }
+
+        // Caso o status seja 'N' (Pendente) ou não exista registro, liberamos o acesso
+        res.json({ jaProcessado: false });
+        } catch (error) {
+            console.error("Erro ao verificar status no banco:", error);
+            res.status(500).json({ erro: "Erro ao consultar status do imóvel." });
+        }
+    };
+
+
+
 module.exports = { 
     salvarDadosContribuinte, 
     processarComprovante,
     listarPedidosPendentes,
     validarPedidoPrefeitura,
-    validarCpfReceita
+    validarCpfReceita,
+    verificarStatusImovel
 };

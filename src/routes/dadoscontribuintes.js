@@ -7,7 +7,8 @@ const {
     salvarDadosContribuinte, 
     processarComprovante, 
     listarPedidosPendentes, 
-    validarPedidoPrefeitura 
+    validarPedidoPrefeitura,
+    verificarStatusImovel 
 } = require("../controllers/dadoscontribuintes");
 
 const storage = multer.memoryStorage();
@@ -20,6 +21,8 @@ router.post("/validar-pedido", validarPedidoPrefeitura);
 // Rota original para salvar os dados no banco
 router.post("/salvar", salvarDadosContribuinte);
 router.get('/validar-cpf/:cpf', contribuinteController.validarCpfReceita);
+
+router.get("/verificar-status/:reduzido", verificarStatusImovel);
 
 // Rota de OCR
 router.post("/processar-comprovante", upload.single("comprovante"), processarComprovante);
