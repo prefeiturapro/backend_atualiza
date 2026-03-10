@@ -18,7 +18,6 @@ async function validarLogradouro(req, res) {
             });
         }
         
-        // Se não encontrar, o frontend liberará a edição manual
         return res.json({ valido: false });
     } catch (error) {
         console.error("Erro ao validar logradouro:", error.message);
@@ -26,16 +25,27 @@ async function validarLogradouro(req, res) {
     }
 }
 
+async function listarLogradouros(req, res) {
+    try {
+        const dados = await modelLogradouros.buscaLogradouros();
+        if (!dados || dados.length === 0) {
+            return res.status(404).json({ erro: "Nenhum logradouro encontrado." });
+        }
+        return res.json(dados);
+    } catch (error) {
+        console.error("Erro ao listar logradouros:", error);
+        return res.status(500).json({ erro: "Erro interno do servidor." });
+    }
+}
 
 const dadoslogradouros = async (req, res) => {
   try {
-    const dados = await modellogradouros.buscaLogradouros();
+    const dados = await modelLogradouros.buscaLogradouros(); // Corrigido camelCase
     
     if (!dados || dados.length === 0) {
       return res.status(404).json({ erro: "Logradouros não encontrados." });
     }
 
-    // Exemplo retornando apenas o primeiro para configuração
     const logradouro = dados[0];
 
     return res.json({
@@ -50,4 +60,5 @@ const dadoslogradouros = async (req, res) => {
   }
 }
 
-module.exports = { dadoslogradouros, validarLogradouro };
+
+module.exports = { dadoslogradouros, validarLogradouro, listarLogradouros };

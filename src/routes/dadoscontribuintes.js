@@ -8,7 +8,8 @@ const {
     processarComprovante, 
     listarPedidosPendentes, 
     validarPedidoPrefeitura,
-    verificarStatusImovel 
+    verificarStatusImovel,
+    enviarComprovante 
 } = require("../controllers/dadoscontribuintes");
 
 const storage = multer.memoryStorage();
@@ -26,5 +27,6 @@ router.get("/verificar-status/:reduzido", verificarStatusImovel);
 
 // Rota de OCR
 router.post("/processar-comprovante", upload.single("comprovante"), processarComprovante);
+router.post("/enviar-comprovante", enviarComprovante);
 
 module.exports = router;

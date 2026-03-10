@@ -1,7 +1,7 @@
 const pool = require("./connection");
 
 async function buscaBairros() {
-    const sql = `SELECT * FROM database.bairros`;
+    const sql = `SELECT * FROM database.bairros ORDER BY nm_bairro`;
     try {
         const { rows } = await pool.query(sql);
         return rows;        
@@ -12,16 +12,33 @@ async function buscaBairros() {
 }
 
 async function buscarBairroPorNome(nome) {
-    // Busca aproximada para lidar com pequenas variações de acentuação ou espaços
+    // 1. Usamos o unaccent para ignorar acentos do banco e do que a IA leu
+    // 2. O parâmetro $1 recebe o nome vindo do frontend
+    // 3. O score de similarity ajuda a definir se o resultado é confiável
     const sql = `
-        SELECT nm_bairro 
-        FROM database.bairros 
-        WHERE nm_bairro ILIKE $1 
-        LIMIT 1
+        SELECT 
+            nm_bairro, 
+            similarity(unaccent(nm_bairro), unaccent($1)) as score
+        FROM database.bairros
+        WHERE 
+            unaccent(nm_bairro) % unaccent($1) -- Busca por similaridade
+            OR unaccent(nm_bairro) ILIKE unaccent($1 || '%') -- Ou se começa com o nome
+        ORDER BY score DESC
+        LIMIT 1;
     `;
-    // O uso de % no início e fim permite achar "MINA DO MATO" se a IA ler apenas "MINA DO"
-    const { rows } = await pool.query(sql, [`%${nome}%`]);
-    return rows[0];
+    
+    try {
+        const { rows } = await pool.query(sql, [nome]);
+        
+        // Só retornamos se o nível de confiança for aceitável (ex: maior que 0.3)
+        if (rows.length > 0 && rows[0].score > 0.3) {
+            return rows[0];
+        }
+        return null;
+    } catch (error) {
+        console.error(`[MODEL] Erro na busca por similaridade:`, error.message);
+        return null;
+    }
 }
 
 module.exports = {

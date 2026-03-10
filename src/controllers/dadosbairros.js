@@ -54,4 +54,20 @@ const dadosbairros = async (req, res) => {
   }
 }
 
-module.exports = { dadosbairros, validarBairro };
+async function listarBairros(req, res) {
+    try {
+        const dados = await modelBairros.buscaBairros();
+        
+        if (!dados || dados.length === 0) {
+            return res.status(404).json({ erro: "Nenhum bairro cadastrado." });
+        }
+
+        // Retornamos a lista completa para o combo
+        return res.json(dados);
+    } catch (error) {
+        console.error("Erro ao listar bairros:", error);
+        return res.status(500).json({ erro: "Erro interno ao buscar lista de bairros." });
+    }
+}
+
+module.exports = { dadosbairros, validarBairro, listarBairros };

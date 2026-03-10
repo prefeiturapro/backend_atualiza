@@ -1,4 +1,5 @@
 const { atualizarContribuinte, extrairTextoDocumento } = require("../models/dadoscontribuintes");
+const { buscaClientes } = require("../models/dadosclientes");
 const pool = require("../models/connection"); 
 const transporter = require("../config/mail"); 
 const twilio = require('twilio');
@@ -62,10 +63,7 @@ const processarComprovante = async (req, res) => {
         const textoAposNome = indexNome !== -1 ? textoLimpo.substring(indexNome) : textoLimpo;
         const blocoEndereco = textoAposNome.substring(0, 450); 
 
-        let matchRuaStr = "", matchNumStr = "", matchBairroStr = "CENTRO", matchCepStr = "", matchCpfStr = "";
-
-        //const matchCpf = textoLimpo.match(/(?:CPF|CNPJ)[:\s]*([\d\.\-\/]{11,18})/i);
-        //if (matchCpf) matchCpfStr = matchCpf[1].replace(/\D/g, "");
+        let matchRuaStr = "", matchNumStr = "", matchBairroStr = "CENTRO", matchCepStr = "";
 
         if (isCelesc) {
             const regexCelescRua = blocoEndereco.match(/ENDERECO[:\s]+([A-ZÀ-Ú\s\.\-]+?)\s+(\d{1,5})/i);
@@ -109,7 +107,7 @@ const processarComprovante = async (req, res) => {
             cidadeFinal = "IÇARA";
         }
 
-        // --- 3. ADIÇÃO: EXTRAÇÃO DE LOTEAMENTO, EDIFÍCIO E COMPLEMENTO ---
+        // --- 3. ADIÇÃO: EXTRAÇÃO DE LOTEAMENTO, EDIFÍCIO E COMPLEMENTO (MANTIDA) ---
         let matchLoteamento = "", matchEdificio = "", matchComplemento = "";
         
         const regexApto = blocoEndereco.match(/(?:APTO|APARTAMENTO|AP)\s?(\d+[A-Z]?)/i);
@@ -130,7 +128,6 @@ const processarComprovante = async (req, res) => {
             ds_numero_atual: matchNumStr,
             ds_bairro_atual: matchBairroStr,
             ds_cidade_atual: cidadeFinal,
-            // Novos campos para o Frontend
             ds_loteamento_extr: matchLoteamento,
             ds_edificio_extr: matchEdificio,
             ds_complemento_extr: matchComplemento.trim(),
@@ -142,11 +139,11 @@ const processarComprovante = async (req, res) => {
 
         return res.json(dadosExtraidos);
 
-        } catch (error) {
-            console.error("Erro no Controller OCR:", error);
-            return res.status(500).json({ erro: "Erro interno no OCR." });
-        }
-    };
+    } catch (error) {
+        console.error("Erro no Controller OCR:", error);
+        return res.status(500).json({ erro: "Erro interno no OCR." });
+    }
+};
 
 const salvarDadosContribuinte = async (req, res) => {
     const dados = req.body;
@@ -161,20 +158,70 @@ const salvarDadosContribuinte = async (req, res) => {
 };
 
 // --- FUNÇÕES DE ADMINISTRAÇÃO ---
+
+/**
+ * LISTAR PEDIDOS PENDENTES
+ * CORREÇÃO: Garante o campo st_responsavel e resolve problemas de visualização
+ */
 const listarPedidosPendentes = async (req, res) => {
     const { status } = req.query; 
-    let sql = `SELECT * FROM database.dados_contribuintes WHERE st_validado_prefeitura = 'N'`;
+    
+    // Explicitamos as colunas para evitar erros de campos nulos ou ocultos
+    let sql = `
+        SELECT 
+            st_responsavel, *,
+            nm_contribuinte as solicitante
+        FROM database.dados_contribuintes 
+        WHERE st_validado_prefeitura = 'N'
+    `;
+    
     const params = [];
     if (status && status !== 'TODOS') {
         sql += ` AND st_editado_manual = $1`;
         params.push(status);
     }
+    
     sql += ` ORDER BY dt_atualizacao DESC, hr_atualizacao DESC`;
+    
     try {
         const { rows } = await pool.query(sql, params);
         res.json(rows);
     } catch (error) {
-        res.status(500).json({ erro: "Erro listar." });
+        console.error("Erro ao listar pedidos:", error);
+        res.status(500).json({ erro: "Erro ao carregar a lista de pedidos." });
+    }
+};
+
+// --- NOVA FUNÇÃO: ENVIAR COMPROVANTE POR EMAIL ---
+const enviarComprovante = async (req, res) => {
+    const { email, nome, protocolo } = req.body;
+    try {
+
+        const clientes = await buscaClientes();
+        const nomePrefeitura = (clientes && clientes.length > 0) 
+            ? clientes[0].nm_cliente 
+            : "Prefeitura Municipal"; // Fallback caso a tabela esteja vazia
+
+        await transporter.sendMail({
+            from: `"${nomePrefeitura}" <${process.env.EMAIL_USER}>`, // Nome dinâmico aqui
+            to: email,
+            subject: `Protocolo de Atualização: ${protocolo}`,
+            html: `
+                <div style="font-family: sans-serif; color: #333;">
+                    <h2 style="color: #198754;">Olá, ${nome}!</h2>
+                    <p>Sua solicitação de atualização cadastral para <strong>${nomePrefeitura}</strong> foi enviada com sucesso.</p>
+                    <p><strong>Número do Protocolo:</strong> <span style="font-size: 18px; color: #0d6efd;">${protocolo}</span></p>
+                    <p>Acompanhe sua atualização nos canais de comunicação do Município.</p>
+                    <br/>
+                    <small>Atenciosamente, <br/> ${nomePrefeitura}</small>
+                </div>
+            `
+        });
+        
+        res.json({ sucesso: true });
+    } catch (error) {
+        console.error("Erro e-mail comprovante:", error);
+        res.status(500).json({ erro: "Erro ao enviar e-mail." });
     }
 };
 
@@ -201,7 +248,7 @@ const validarPedidoPrefeitura = async (req, res) => {
                         from: `"Prefeitura" <${process.env.EMAIL_USER}>`,
                         to: pedido.ds_email_atual,
                         subject: "Pedido Indeferido",
-                        html: `<p>Olá ${pedido.nm_contribuinte}, seu pedido foi cancelado.</p>`
+                        html: `<p>Olá ${pedido.nm_contribuinte}, seu pedido foi indeferido por motivos de inconsistências. Favor procurar a Secretaria da Fazenda para maiores informações.</p>`
                     });
                 } catch (err) { console.error("Erro Email:", err.message); }
             }
@@ -212,7 +259,8 @@ const validarPedidoPrefeitura = async (req, res) => {
             return res.json({ sucesso: true });
         }
     } catch (error) {
-        res.status(500).json({ erro: "Erro interno." });
+        console.error("Erro ao validar:", error);
+        res.status(500).json({ erro: "Erro interno ao processar validação." });
     }
 };
 
@@ -227,16 +275,9 @@ async function validarCpfReceita(req, res) {
     }
 }
 
-// ... (mantenha suas funções processarComprovante, salvarDadosContribuinte, etc.)
-
-/**
- * Verifica se o imóvel já possui uma análise (Aprovado ou Indeferido)
- * para impedir o contribuinte de enviar um novo cadastro desnecessariamente.
- */
 const verificarStatusImovel = async (req, res) => {
     const { reduzido } = req.params;
     try {
-        // Busca o último registro enviado para este código reduzido
         const result = await pool.query(
             `SELECT st_validado_prefeitura 
              FROM database.dados_contribuintes 
@@ -247,8 +288,6 @@ const verificarStatusImovel = async (req, res) => {
 
         if (result.rows.length > 0) {
             const status = result.rows[0].st_validado_prefeitura;
-            
-            // Se o status for 'S' (Aprovado/Sim) ou 'C' (Cancelado/Indeferido)
             if (status === 'S' || status === 'C') {
                 return res.json({ 
                     jaProcessado: true, 
@@ -256,16 +295,12 @@ const verificarStatusImovel = async (req, res) => {
                 });
             }
         }
-
-        // Caso o status seja 'N' (Pendente) ou não exista registro, liberamos o acesso
         res.json({ jaProcessado: false });
-        } catch (error) {
-            console.error("Erro ao verificar status no banco:", error);
-            res.status(500).json({ erro: "Erro ao consultar status do imóvel." });
-        }
-    };
-
-
+    } catch (error) {
+        console.error("Erro ao verificar status:", error);
+        res.status(500).json({ erro: "Erro ao consultar status do imóvel." });
+    }
+};
 
 module.exports = { 
     salvarDadosContribuinte, 
@@ -273,5 +308,6 @@ module.exports = {
     listarPedidosPendentes,
     validarPedidoPrefeitura,
     validarCpfReceita,
-    verificarStatusImovel
+    verificarStatusImovel,
+    enviarComprovante
 };

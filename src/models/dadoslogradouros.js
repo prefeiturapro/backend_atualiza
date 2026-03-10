@@ -1,27 +1,49 @@
 const pool = require("./connection");
 
 async function buscaLogradouros() {
-    const sql = `SELECT * FROM database.logradouros`;
+    // Adicionado ORDER BY para facilitar a localização no combo do frontend
+    const sql = `SELECT * FROM database.logradouros ORDER BY nm_logradouro ASC`;
     try {
         const { rows } = await pool.query(sql);
         return rows;        
     } catch (error) {
-        console.error(`[MODEL] ERRO CRÍTICO NO SQL:`, error.message);
+        console.error(`[MODEL LOGRADOUROS] ERRO CRÍTICO NO SQL:`, error.message);
         return [];
     }
 }
 
 async function buscarLogradouroPorNome(nome) {
-    // Busca aproximada para lidar com pequenas variações de acentuação ou espaços
+    /**
+     * 1. unaccent: remove acentos da busca e do banco.
+     * 2. similarity: calcula o quão perto 'R. João' está de 'Rua João'.
+     * 3. operador %: utiliza o índice GIST/GIN (se houver) para performance.
+     */
     const sql = `
-        SELECT nm_logradouro 
+        SELECT 
+            nm_logradouro,
+            similarity(unaccent(nm_logradouro), unaccent($1)) as score
         FROM database.logradouros 
-        WHERE nm_logradouro ILIKE $1 
+        WHERE 
+            unaccent(nm_logradouro) % unaccent($1) -- Busca por similaridade
+            OR unaccent(nm_logradouro) ILIKE unaccent('%' || $1 || '%') -- Fallback para busca parcial
+        ORDER BY score DESC
         LIMIT 1
     `;
-    // O uso de % no início e fim permite achar "MINA DO MATO" se a IA ler apenas "MINA DO"
-    const { rows } = await pool.query(sql, [`%${nome}%`]);
-    return rows[0];
+    
+    try {
+        const { rows } = await pool.query(sql, [nome]);
+        
+        // Definimos um score mínimo de 0.3 para evitar que ele retorne 
+        // uma rua totalmente diferente se não houver nada parecido.
+        if (rows.length > 0 && rows[0].score > 0.3) {
+            return rows[0];
+        }
+        
+        return null;
+    } catch (error) {
+        console.error(`[MODEL LOGRADOUROS] ERRO NA BUSCA POR SIMILARIDADE:`, error.message);
+        return null;
+    }
 }
 
 module.exports = {
