@@ -18,7 +18,7 @@ async function buscaImoveisDinamica(filtros) {
             nm_bairro_imovel, ds_loteamento_imovel, ds_edificio_imovel, ds_fotoimovel,
             nm_responsavel, nr_cpf_resp, nm_logradouro_resp, ds_numero_resp, 
             nr_cep_resp, nm_bairro_resp, nr_telefone_resp, ds_email_resp, ds_foto_resp, ds_edificio_resp,
-            ds_loteamento_resp, ds_inscricao, cd_reduzido, cd_responsavel
+            ds_loteamento_resp, ds_inscricao, cd_reduzido, cd_responsavel, cd_cmc
         FROM database.dados_imoveis 
         WHERE 1=1
     `;

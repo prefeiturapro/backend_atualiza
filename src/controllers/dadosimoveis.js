@@ -1,37 +1,47 @@
 const { buscaImoveisDinamica } = require("../models/dadosimoveis");
-const pool = require("../models/connection"); // Importe o pool aqui para a busca direta
+const modelDadosGerais = require("../models/dadosgerais"); // Precisamos dele para ler a trava
+const pool = require("../models/connection");
 
 const dadosimoveis = async (req, res) => {
-    // Captura todos os campos possíveis enviados pelo formulário dinâmico
-    const { 
-        ds_inscricao, 
-        nr_cpf_resp, 
-        cd_reduzido, 
-        cd_responsavel, 
-        nm_responsavel,
-        reduzido // campo usado pelo Admin
-    } = req.body;
+    const { reduzido } = req.body;
 
     try {
         let dados;
 
-        // Se houver 'reduzido' vindo da busca direta do Admin
+        // 1. BUSCA O IMÓVEL (Sua lógica original)
         if (reduzido) {
             const sqlAdmin = `SELECT * FROM database.dados_imoveis WHERE cd_reduzido = $1`;
             const result = await pool.query(sqlAdmin, [reduzido]);
             dados = result.rows;
         } else {
-            // Busca dinâmica para o Contribuinte baseada no que ele preencheu
-            // Passamos o objeto completo para o Model
             dados = await buscaImoveisDinamica(req.body);
         }
 
         if (!dados || dados.length === 0) {
-            return res.status(404).json({ erro: "Cadastro não encontrado com os dados informados." });
+            return res.status(404).json({ erro: "Cadastro não encontrado." });
         }
 
         const imovel = dados[0];
 
+        // 2. BUSCA CONFIGURAÇÃO DE BLOQUEIO (Tabela master.dados_gerais)
+        const configGeral = await modelDadosGerais.obterDadosGerais();
+        
+        // Verifica se a trava está ATIVA (N = Bloqueia quem tem CMC)
+        const bloqueioAtivo = configGeral.st_bloqueiacmc === 'N';
+        
+        // Verifica se o imóvel possui um CMC preenchido (diferente de nulo e zero)
+        const temCMC = imovel.cd_cmc && imovel.cd_cmc !== 0 && imovel.cd_cmc !== "0";
+
+        // 3. REGRA DE BLOQUEIO
+        // Se a prefeitura bloqueia (N) E o imóvel tem CMC, retorna erro 403 (Proibido)
+        if (bloqueioAtivo && temCMC) {
+            return res.status(403).json({ 
+                erro: "Este cadastro possui vínculo com CMC e não permite atualização online. Procure a prefeitura.",
+                bloqueadoPeloCMC: true 
+            });
+        }
+
+        // 4. SE PASSOU PELA REGRA, FORMATA AS FOTOS E RETORNA
         const formatarFoto = (campo) => {
             if (campo && Buffer.isBuffer(campo)) {
                 return `data:image/jpeg;base64,${campo.toString('base64')}`;

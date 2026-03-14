@@ -5,6 +5,9 @@ const transporter = require("../config/mail");
 const twilio = require('twilio');
 const axios = require('axios');
 
+// INSTÂNCIA DO CLIENTE TWILIO (Garante que as variáveis sejam lidas do .env profissional)
+const client = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
 /**
  * Função para processar o comprovante via OCR ou Extração Direta
  */
@@ -28,7 +31,7 @@ const processarComprovante = async (req, res) => {
         const textoLimpo = textoBruto.toUpperCase();
         const isCelesc = textoLimpo.includes("CELESC");
         
-        // --- 1. LÓGICA DE IDENTIFICAÇÃO DO NOME (MANTIDA INTEGRALMENTE) ---
+        // --- 1. LÓGICA DE IDENTIFICAÇÃO DO NOME ---
         let nomeCandidato = "NOME NÃO IDENTIFICADO";
 
         if (isCelesc) {
@@ -58,7 +61,7 @@ const processarComprovante = async (req, res) => {
             }
         }
 
-        // --- 2. LÓGICA DE EXTRAÇÃO DE ENDEREÇO (MANTIDA INTEGRALMENTE) ---
+        // --- 2. LÓGICA DE EXTRAÇÃO DE ENDEREÇO ---
         const indexNome = textoLimpo.indexOf(nomeCandidato);
         const textoAposNome = indexNome !== -1 ? textoLimpo.substring(indexNome) : textoLimpo;
         const blocoEndereco = textoAposNome.substring(0, 450); 
@@ -107,7 +110,7 @@ const processarComprovante = async (req, res) => {
             cidadeFinal = "IÇARA";
         }
 
-        // --- 3. ADIÇÃO: EXTRAÇÃO DE LOTEAMENTO, EDIFÍCIO E COMPLEMENTO (MANTIDA) ---
+        // --- 3. EXTRAÇÃO DE COMPLEMENTOS ---
         let matchLoteamento = "", matchEdificio = "", matchComplemento = "";
         
         const regexApto = blocoEndereco.match(/(?:APTO|APARTAMENTO|AP)\s?(\d+[A-Z]?)/i);
@@ -159,14 +162,8 @@ const salvarDadosContribuinte = async (req, res) => {
 
 // --- FUNÇÕES DE ADMINISTRAÇÃO ---
 
-/**
- * LISTAR PEDIDOS PENDENTES
- * CORREÇÃO: Garante o campo st_responsavel e resolve problemas de visualização
- */
 const listarPedidosPendentes = async (req, res) => {
     const { status } = req.query; 
-    
-    // Explicitamos as colunas para evitar erros de campos nulos ou ocultos
     let sql = `
         SELECT 
             st_responsavel, *,
@@ -192,18 +189,16 @@ const listarPedidosPendentes = async (req, res) => {
     }
 };
 
-// --- NOVA FUNÇÃO: ENVIAR COMPROVANTE POR EMAIL ---
 const enviarComprovante = async (req, res) => {
     const { email, nome, protocolo } = req.body;
     try {
-
         const clientes = await buscaClientes();
         const nomePrefeitura = (clientes && clientes.length > 0) 
             ? clientes[0].nm_cliente 
-            : "Prefeitura Municipal"; // Fallback caso a tabela esteja vazia
+            : "Prefeitura Municipal";
 
         await transporter.sendMail({
-            from: `"${nomePrefeitura}" <${process.env.EMAIL_USER}>`, // Nome dinâmico aqui
+            from: `"${nomePrefeitura}" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: `Protocolo de Atualização: ${protocolo}`,
             html: `
@@ -234,13 +229,13 @@ const validarPedidoPrefeitura = async (req, res) => {
 
         if (acao === 'CANCELAR') {
             try {
-                const client = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+                // AJUSTADO: Garante o uso da variável correta definida no .env profissional
                 await client.messages.create({
-                    body: `AtualizaAI: Ola ${pedido.nm_contribuinte}, seu pedido foi indeferido.`,
+                    messagingServiceSid: process.env.TWILIO_MESSAGE_SERVICE_SID,
                     to: `+55${pedido.nr_telefone_atual.replace(/\D/g, "")}`,
-                    from: process.env.TWILIO_NUMBER
+                    body: `PrefeituraPro: Ola ${pedido.nm_contribuinte.split(' ')[0]}, seu pedido de atualizacao foi indeferido. Verifique seu e-mail para detalhes.`
                 });
-            } catch (err) { console.error("Erro SMS:", err.message); }
+            } catch (err) { console.error("Erro SMS Profissional:", err.message); }
 
             if (pedido.ds_email_atual) {
                 try {

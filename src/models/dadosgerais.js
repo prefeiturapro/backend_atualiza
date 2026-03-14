@@ -27,14 +27,14 @@ async function atualizarDadosGerais(id, d) {
             st_logincpf = $7, st_logininscricao = $8, st_loginreduzido = $9,
             st_loginpornome = $10, st_logingovbr = $11, st_logincertificado = $12,
             st_aprovacaoaut = $13, st_login_cod_cont = $14, id_municipios = $15,
-            st_bloqueioresp = $16
-        WHERE id_dados_gerais = $17
+            st_bloqueioresp = $16, st_bloqueiacmc = $17
+        WHERE id_dados_gerais = $18
     `;
     const values = [
         d.nr_exercicio, d.st_checkcpf, d.st_checkcnpj, d.ds_ftp, d.nm_userftp, d.ds_senhaftp,
         d.st_logincpf, d.st_logininscricao, d.st_loginreduzido, d.st_loginpornome,
         d.st_logingovbr, d.st_logincertificado, d.st_aprovacaoaut, d.st_login_cod_cont,
-        d.id_municipios, d.st_bloqueioresp, id
+        d.id_municipios, d.st_bloqueioresp, d.st_bloqueiacmc, id
     ];
     await pool.query(sql, values);
 }

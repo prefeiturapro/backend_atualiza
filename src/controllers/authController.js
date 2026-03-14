@@ -1,18 +1,18 @@
 const twilio = require('twilio');
-const transporter = require('../config/mail'); // Certifique-se de que o caminho está correto
+const transporter = require('../config/mail'); 
 
-// Carrega as credenciais do seu arquivo .env
 const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
-const serviceSid = process.env.TWILIO_SERVICE_SID;
 
 const client = new twilio(accountSid, authToken);
 
-// Armazenamento temporário para códigos de e-mail (em memória)
+// Armazenamento temporário (Memória)
+const otpsSms = {}; 
 const otpsEmail = {}; 
 
 /**
  * SMS: Envia o código de verificação via Twilio
+ * CORREÇÃO: Usando 'from' direto com o nome aprovado para evitar erro 21703
  */
 const enviarCodigo = async (req, res) => {
     try {
@@ -22,16 +22,29 @@ const enviarCodigo = async (req, res) => {
             return res.status(400).json({ erro: "Telefone é obrigatório" });
         }
 
-        const verification = await client.verify.v2.services(serviceSid)
-            .verifications
-            .create({ 
-                to: telefone, 
-                channel: 'sms',
-                locale: 'pt' 
-            });
+        const codigo = Math.floor(100000 + Math.random() * 900000).toString();
+        
+        // Tratamento do Telefone
+        let telefoneLimpo = telefone.replace(/\D/g, ""); 
+        const chaveMemoria = telefoneLimpo; // Chave para salvar no objeto otpsSms
 
-        console.log(`Status do envio SMS: ${verification.status}`);
-        res.json({ sucesso: true, status: verification.status });
+        if (telefoneLimpo.startsWith("55") && telefoneLimpo.length >= 12) {
+            telefoneLimpo = "+" + telefoneLimpo;
+        } else {
+            telefoneLimpo = "+55" + telefoneLimpo;
+        }
+
+        // Salva na memória usando a string numérica pura
+        otpsSms[chaveMemoria] = codigo;
+
+        // ENVIO FORÇANDO O NOME APROVADO (Alpha Sender ID)
+        const message = await client.messages.create({ 
+            messagingServiceSid: process.env.TWILIO_MESSAGE_SERVICE_SID, 
+            to: telefoneLimpo, 
+            body: `AtualizaAí: Seu codigo e ${codigo}` 
+        });
+        console.log(`SMS enviado via PREF_ATUALI para ${telefoneLimpo}! SID: ${message.sid}`);
+        res.json({ sucesso: true, status: 'pending' });
 
     } catch (error) {
         console.error("Erro Twilio Enviar:", error);
@@ -48,16 +61,14 @@ const enviarCodigo = async (req, res) => {
 const validarCodigo = async (req, res) => {
     try {
         const { telefone, codigo } = req.body;
+        const telefoneLimpo = telefone.replace(/\D/g, "");
 
         if (!telefone || !codigo) {
             return res.status(400).json({ erro: "Telefone e código são obrigatórios" });
         }
 
-        const verificationCheck = await client.verify.v2.services(serviceSid)
-            .verificationChecks
-            .create({ to: telefone, code: codigo });
-
-        if (verificationCheck.status === 'approved') {
+        if (otpsSms[telefoneLimpo] && otpsSms[telefoneLimpo] === codigo) {
+            delete otpsSms[telefoneLimpo]; 
             res.json({ 
                 sucesso: true, 
                 mensagem: "Telefone validado com sucesso!" 
@@ -72,8 +83,7 @@ const validarCodigo = async (req, res) => {
     } catch (error) {
         console.error("Erro Twilio Validar:", error);
         res.status(500).json({ 
-            erro: "Erro na validação do código SMS", 
-            detalhes: error.message 
+            erro: "Erro na validação do código SMS" 
         });
     }
 };
@@ -86,19 +96,17 @@ const enviarOtpEmail = async (req, res) => {
         const { email } = req.body;
         if (!email) return res.status(400).json({ erro: "E-mail é obrigatório" });
 
-        // Gera código de 6 dígitos
         const codigo = Math.floor(100000 + Math.random() * 900000).toString(); 
         otpsEmail[email.toLowerCase()] = codigo;
 
-        // Configuração do e-mail com template HTML
         const mailOptions = {
-            from: `"AtualizaAI - Verificação" <${process.env.EMAIL_USER}>`,
+            from: `"PrefeituraPro - Verificação" <${process.env.EMAIL_USER}>`,
             to: email.toLowerCase(),
             subject: `${codigo} é o seu código de verificação`,
             html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px;">
                 <div style="text-align: center; margin-bottom: 20px;">
-                    <h2 style="color: #0d6efd; margin: 0;">AtualizaAI</h2>
+                    <h2 style="color: #0d6efd; margin: 0;">PrefeituraPro</h2>
                     <p style="color: #6c757d; font-size: 14px;">Portal de Atualização Cadastral Municipal</p>
                 </div>
                 <hr style="border: 0; border-top: 1px solid #eee;">
@@ -134,7 +142,7 @@ const validarOtpEmail = (req, res) => {
     const emailKey = email.toLowerCase();
     
     if (otpsEmail[emailKey] && otpsEmail[emailKey] === codigo) {
-        delete otpsEmail[emailKey]; // Sucesso: remove o código da memória
+        delete otpsEmail[emailKey]; 
         return res.json({ sucesso: true, mensagem: "E-mail validado!" });
     }
     

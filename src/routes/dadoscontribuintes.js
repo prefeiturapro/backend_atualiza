@@ -20,7 +20,10 @@ router.get("/pendentes", listarPedidosPendentes);
 router.post("/validar-pedido", validarPedidoPrefeitura);
 
 // Rota original para salvar os dados no banco
-router.post("/salvar", salvarDadosContribuinte);
+
+router.post("/salvar", upload.single("ds_comprovante"), salvarDadosContribuinte);
+
+// ... restante do códig
 router.get('/validar-cpf/:cpf', contribuinteController.validarCpfReceita);
 
 router.get("/verificar-status/:reduzido", verificarStatusImovel);
