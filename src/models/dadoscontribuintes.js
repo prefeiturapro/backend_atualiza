@@ -5,9 +5,30 @@ const pdfParseRaw = require('pdf-parse');
 
 const pdfParse = typeof pdfParseRaw === 'function' ? pdfParseRaw : pdfParseRaw.default;
 
-const client = new vision.ImageAnnotatorClient({
-    keyFilename: path.join(__dirname, '../../config/google-key.json')
-});
+/**
+ * CONFIGURAÇÃO DO GOOGLE VISION
+ * Tenta ler da variável de ambiente (Render/Produção) 
+ * ou do arquivo local (Desenvolvimento)
+ */
+let visionConfig = {};
+
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+    // Para o Render: Lê o JSON direto da variável de ambiente
+    try {
+        visionConfig = { 
+            credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) 
+        };
+    } catch (err) {
+        console.error("Erro ao dar parse no JSON da Google Key no Render:", err.message);
+    }
+} else {
+    // Para o PC Local: Usa o arquivo físico
+    visionConfig = { 
+        keyFilename: path.join(__dirname, '../../config/google-key.json') 
+    };
+}
+
+const client = new vision.ImageAnnotatorClient(visionConfig);
 
 /**
  * Função para extrair texto de Imagem ou PDF
@@ -55,42 +76,18 @@ async function extrairTextoDocumento(buffer, isPdf) {
 
 /**
  * Persistência no Banco de Dados
- * AJUSTADO: Correção de tipos e alinhamento de parâmetros
  */
 async function atualizarContribuinte(dados) {
     const sql = `
         INSERT INTO database.dados_contribuintes (
-            ds_inscricao_imovel,    -- $1
-            cd_reduzido_imovel,     -- $2
-            cd_contribuinte,        -- $3
-            nm_contribuinte,        -- $4
-            nr_cpf_atual,           -- $5
-            ds_comprovante,         -- $6
-            nr_telefone_atual,      -- $7
-            nm_rua_atual,           -- $8
-            ds_numero_atual,        -- $9
-            nr_cep_atual,           -- $10
-            ds_bairro_atual,        -- $11
-            ds_cidade_atual,        -- $12
-            ds_email_atual,         -- $13
-            ds_obs,                 -- $14
-            ds_protocolo,           -- $15
-            st_editado_manual,      -- $16
-            nm_rua_extr,            -- $17
-            tp_rua_extr,            -- $18
-            ds_numero_extr,         -- $19
-            nr_cep_extr,            -- $20
-            ds_bairro_extr,         -- $21
-            ds_cidade_extr,         -- $22
-            st_responsavel,         -- $23
-            ds_loteamento_atual,    -- $24
-            ds_edificio_atual,      -- $25
-            ds_complemento_atual,   -- $26
-            ds_loteamento_extr,     -- $27
-            ds_edificio_extr,       -- $28
-            ds_complemento_extr,    -- $29
-            dt_atualizacao,         -- Gerado via SQL
-            hr_atualizacao          -- Gerado via SQL
+            ds_inscricao_imovel, cd_reduzido_imovel, cd_contribuinte, nm_contribuinte, 
+            nr_cpf_atual, ds_comprovante, nr_telefone_atual, nm_rua_atual, 
+            ds_numero_atual, nr_cep_atual, ds_bairro_atual, ds_cidade_atual, 
+            ds_email_atual, ds_obs, ds_protocolo, st_editado_manual, 
+            nm_rua_extr, tp_rua_extr, ds_numero_extr, nr_cep_extr, 
+            ds_bairro_extr, ds_cidade_extr, st_responsavel, ds_loteamento_atual, 
+            ds_edificio_atual, ds_complemento_atual, ds_loteamento_extr, 
+            ds_edificio_extr, ds_complemento_extr, dt_atualizacao, hr_atualizacao
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 
             $26, $27, $28, $29, CURRENT_DATE, LOCALTIME(0)
@@ -98,45 +95,45 @@ async function atualizarContribuinte(dados) {
     `;
 
     const values = [
-        dados.ds_inscricao_imovel,   // $1
-        dados.cd_reduzido_imovel,    // $2
-        dados.cd_contribuinte,       // $3
-        dados.nm_contribuinte,       // $4
-        dados.nr_cpf_atual || '0',   // $5
-        dados.ds_comprovante || '',  // $6
-        dados.nr_telefone_atual,     // $7
-        dados.nm_rua_atual,          // $8
-        dados.ds_numero_atual,       // $9
-        dados.nr_cep_atual,          // $10
-        dados.ds_bairro_atual,       // $11
-        dados.ds_cidade_atual,       // $12
-        dados.ds_email_atual,        // $13
-        dados.ds_obs,                // $14
-        dados.ds_protocolo,          // $15
-        dados.st_editado_manual,     // $16
-        dados.nm_rua_extr,           // $17
-        'RUA',                       // $18
-        dados.ds_numero_extr,        // $19
-        dados.nr_cep_extr,           // $20
-        dados.ds_bairro_extr,        // $21
-        dados.ds_cidade_extr,        // $22
-        dados.st_responsavel,        // $23
-        dados.ds_loteamento_atual,   // $24
-        dados.ds_edificio_atual,     // $25
-        dados.ds_complemento_atual,  // $26
-        dados.ds_loteamento_extr,    // $27
-        dados.ds_edificio_extr,      // $28
-        dados.ds_complemento_extr    // $29
+        dados.ds_inscricao_imovel, 
+        dados.cd_reduzido_imovel, 
+        dados.cd_contribuinte, 
+        dados.nm_contribuinte, 
+        dados.nr_cpf_atual || '0', 
+        dados.ds_comprovante || '', 
+        dados.nr_telefone_atual, 
+        dados.nm_rua_atual, 
+        dados.ds_numero_atual, 
+        dados.nr_cep_atual, 
+        dados.ds_bairro_atual, 
+        dados.ds_cidade_atual, 
+        dados.ds_email_atual, 
+        dados.ds_obs, 
+        dados.ds_protocolo, 
+        dados.st_editado_manual, 
+        dados.nm_rua_extr, 
+        'RUA', 
+        dados.ds_numero_extr, 
+        dados.nr_cep_extr, 
+        dados.ds_bairro_extr, 
+        dados.ds_cidade_extr, 
+        dados.st_responsavel, 
+        dados.ds_loteamento_atual, 
+        dados.ds_edificio_atual, 
+        dados.ds_complemento_atual, 
+        dados.ds_loteamento_extr, 
+        dados.ds_edificio_extr, 
+        dados.ds_complemento_extr
     ];
 
     try {
         await pool.query(sql, values);
         return { sucesso: true };
-        } catch (error) {
-            console.error("Erro ao inserir novo registro de contribuinte no banco:", error);
-            throw error;
-        }
+    } catch (error) {
+        console.error("Erro ao inserir novo registro no banco:", error);
+        throw error;
     }
+}
 
 module.exports = {
     atualizarContribuinte,
