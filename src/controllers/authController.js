@@ -129,8 +129,11 @@ const enviarOtpEmail = async (req, res) => {
         res.json({ sucesso: true, mensagem: "E-mail enviado!" });
 
     } catch (error) {
-        console.error("Erro E-mail Enviar:", error);
-        res.status(500).json({ erro: "Falha ao disparar e-mail de verificação." });
+        console.error("ERRO FATAL NO ENVIO DE EMAIL:", error); // Isso vai aparecer no LOG do Render
+        res.status(500).json({ 
+            erro: "Falha interna no servidor de e-mail", 
+            detalhes: error.message 
+        });
     }
 };
 
