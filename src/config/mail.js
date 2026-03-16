@@ -4,13 +4,14 @@ const nodemailer = require('nodemailer');
  * Configuração do Transportador de E-mail utilizando as credenciais do .env
  */
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST, // smtp.gmail.com
-  port: 465,                    // Porta padrão para conexões seguras (SSL)
-  secure: true,                 // true para porta 465, false para outras portas
+  service: 'gmail', // Adicionar isso ajuda o Nodemailer a configurar os protocolos internos
   auth: {
-    user: process.env.EMAIL_USER, // atualizaai.cadastro@gmail.com
-    pass: process.env.EMAIL_PASS, // xphjdutdcfgvjwuy (Senha de App)
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
+  tls: {
+    rejectUnauthorized: false // Essencial para evitar bloqueios de certificado em servidores de nuvem
+  }
 });
 
 // Verifica se a conexão com o servidor de e-mail está funcionando ao iniciar
