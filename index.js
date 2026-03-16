@@ -55,4 +55,14 @@ app.use("/dadoslogradouros", dadosLogradourosRoutes);
 app.use("/dadosmunicipios", dadosMunicipiosRoutes); 
 app.use("/dadosgerais", dadosGeraisRoutes);
 
+// Adicione isso no final do index.js para testar a conexão no início
+const transporter = require('./src/config/mail');
+transporter.verify((error, success) => {
+    if (error) {
+        console.log("⚠️ Resend aguardando configuração ou com erro.");
+    } else {
+        console.log("✅ Resend: Sistema de e-mail pronto para decolar!");
+    }
+});
+
 module.exports = app;
