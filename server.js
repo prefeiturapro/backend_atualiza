@@ -3,7 +3,7 @@ require("dotenv").config();
 const app = require("./index");          // Importa seu app Express
 const pool = require("./src/models/connection");  // Importa a conexão
 
-const PORT = 3002;
+const PORT = process.env.PORT || 3002;
 
 app.listen(PORT, async () => {
   console.log(`🚀 API rodando na porta ${PORT}`);
