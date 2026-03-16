@@ -52,7 +52,7 @@ app.use("/dadoslogradouros", dadosLogradourosRoutes);
 app.use("/dadosmunicipios", dadosMunicipiosRoutes); 
 app.use("/dadosgerais", dadosGeraisRoutes);
 
-const porta = 3002;
+const PORT = process.env.PORT || 3002;
 
 app.listen(porta, () => {
   console.log(`Servidor rodando na porta ${porta}`);
