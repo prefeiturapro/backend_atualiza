@@ -1,27 +1,42 @@
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
-const transporter = nodemailer.createTransport({
-  host: "smtp.gmail.com",
-  port: 587,
-  secure: false, // Obrigatório false para 587
-  pool: true,    // Mantém a conexão aberta para evitar novos timeouts
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-  tls: {
-    rejectUnauthorized: false, // Ignora bloqueios de certificado do Render
-    minVersion: "TLSv1.2"
-  }
-});
+// Pegamos a chave primeiro
+const apiKey = process.env.RESEND_API_KEY;
 
-// Verificação de segurança
-transporter.verify((error, success) => {
-  if (error) {
-    console.error("[MAIL] Erro de Conexão:", error.message);
-  } else {
-    console.log("[MAIL] ✅ Conexão estabelecida com sucesso!");
-  }
-});
+// Só instanciamos se a chave existir, para não dar o erro de "Missing API Key"
+const resend = apiKey ? new Resend(apiKey) : null;
+
+const transporter = {
+    sendMail: async (options) => {
+        if (!resend) {
+            console.error("[RESEND] ❌ Tentativa de envio sem API Key configurada.");
+            throw new Error("Configuração de e-mail ausente.");
+        }
+        try {
+            const { data, error } = await resend.emails.send({
+                from: 'AtualizaAí <onboarding@resend.dev>',
+                to: options.to,
+                subject: options.subject,
+                html: options.html,
+            });
+
+            if (error) throw error;
+            console.log("[RESEND] ✅ E-mail enviado:", data.id);
+            return data;
+        } catch (err) {
+            console.error("[RESEND] ❌ Erro no envio:", err.message);
+            throw err;
+        }
+    },
+    verify: (callback) => {
+        if (apiKey) {
+            console.log("✅ Resend: API Key detectada.");
+            callback(null, true);
+        } else {
+            console.warn("⚠️ Resend: API Key não encontrada no .env");
+            callback(new Error("Missing Key"), null);
+        }
+    }
+};
 
 module.exports = transporter;

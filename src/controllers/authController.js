@@ -12,7 +12,6 @@ const otpsEmail = {};
 
 /**
  * SMS: Envia o código de verificação via Twilio
- * CORREÇÃO: Usando 'from' direto com o nome aprovado para evitar erro 21703
  */
 const enviarCodigo = async (req, res) => {
     try {
@@ -26,7 +25,7 @@ const enviarCodigo = async (req, res) => {
         
         // Tratamento do Telefone
         let telefoneLimpo = telefone.replace(/\D/g, ""); 
-        const chaveMemoria = telefoneLimpo; // Chave para salvar no objeto otpsSms
+        const chaveMemoria = telefoneLimpo; 
 
         if (telefoneLimpo.startsWith("55") && telefoneLimpo.length >= 12) {
             telefoneLimpo = "+" + telefoneLimpo;
@@ -34,15 +33,14 @@ const enviarCodigo = async (req, res) => {
             telefoneLimpo = "+55" + telefoneLimpo;
         }
 
-        // Salva na memória usando a string numérica pura
         otpsSms[chaveMemoria] = codigo;
 
-        // ENVIO FORÇANDO O NOME APROVADO (Alpha Sender ID)
         const message = await client.messages.create({ 
             messagingServiceSid: process.env.TWILIO_MESSAGE_SERVICE_SID, 
             to: telefoneLimpo, 
             body: `AtualizaAí: Seu codigo e ${codigo}` 
         });
+
         console.log(`SMS enviado via PREF_ATUALI para ${telefoneLimpo}! SID: ${message.sid}`);
         res.json({ sucesso: true, status: 'pending' });
 
@@ -89,7 +87,8 @@ const validarCodigo = async (req, res) => {
 };
 
 /**
- * E-MAIL: Envia código OTP via Nodemailer
+ * E-MAIL: Envia código OTP via Resend
+ * IMPORTANTE: Para testes no plano grátis, o 'to' deve ser seu email cadastrado no Resend.
  */
 const enviarOtpEmail = async (req, res) => {
     try {
@@ -99,10 +98,13 @@ const enviarOtpEmail = async (req, res) => {
         const codigo = Math.floor(100000 + Math.random() * 900000).toString(); 
         otpsEmail[email.toLowerCase()] = codigo;
 
+        // Montagem das opções para o Resend através do nosso transporter blindado
         const mailOptions = {
-            // AJUSTE: Remetente simplificado para evitar bloqueios de segurança do Gmail/SMTP
-            from: `"AtualizaAí" <${process.env.EMAIL_USER}>`,
-            to: email.toLowerCase(),
+            // No Resend (plano grátis), o remetente DEVE ser onboarding@resend.dev
+            from: 'onboarding@resend.dev', 
+            // Para testes, o Resend só envia para o seu email de cadastro. 
+            // Assim que validar o domínio atualizaai.ia.br, você poderá usar email.toLowerCase()
+            to: 'prefeiturapro@gmail.com', 
             subject: `${codigo} é o seu código de verificação`,
             html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px;">
@@ -125,15 +127,16 @@ const enviarOtpEmail = async (req, res) => {
             `
         };
 
-        // Envio do e-mail
+        // Disparo via API do Resend (através do transporter.js)
         await transporter.sendMail(mailOptions);
-        console.log(`Código de e-mail enviado para: ${email}`);
-        res.json({ sucesso: true, mensagem: "E-mail enviado!" });
+        
+        console.log(`[RESEND] Código OTP enviado com sucesso para o email de teste.`);
+        res.json({ sucesso: true, mensagem: "Código enviado para seu e-mail!" });
 
     } catch (error) {
-        console.error("ERRO FATAL NO ENVIO DE EMAIL:", error); // Isso vai aparecer no LOG do Render
+        console.error("ERRO FATAL NO ENVIO DE EMAIL VIA RESEND:", error);
         res.status(500).json({ 
-            erro: "Falha interna no servidor de e-mail", 
+            erro: "Falha ao disparar e-mail de verificação.", 
             detalhes: error.message 
         });
     }
