@@ -3,17 +3,21 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path"); 
 
+// Importa a configuração de e-mail para validar a conexão no boot
+require('./src/config/mail'); 
+
 const app = express();
 
 app.use(express.json({ limit: '50mb' })); 
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-app.use(cors()); // Libera tudo de forma simples
+app.use(cors());
 app.use((req, res, next) => {
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", 'GET,PUT,POST,DELETE');
   next();
 });
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // === IMPORTAÇÃO DOS CONTROLLERS / ROTAS ===
@@ -27,7 +31,6 @@ const dadosLogradourosRoutes = require("./src/routes/dadoslogradouros");
 const dadosMunicipiosRoutes = require("./src/routes/dadosmunicipios"); 
 const dadosGeraisRoutes = require("./src/routes/dadosgerais");
 
-// IMPORTAÇÃO DAS NOVAS FUNÇÕES DE E-MAIL
 const { 
     enviarCodigo, 
     validarCodigo, 
@@ -35,11 +38,9 @@ const {
     validarOtpEmail 
 } = require('./src/controllers/authController'); 
 
-// === ROTAS DE AUTENTICAÇÃO SMS (TWILIO) ===
+// === ROTAS DE AUTENTICAÇÃO ===
 app.post('/api/auth/enviar-otp', enviarCodigo);
 app.post('/api/auth/validar-otp', validarCodigo);
-
-// === NOVAS ROTAS DE AUTENTICAÇÃO E-MAIL (NODEMAILER) ===
 app.post('/api/auth/enviar-otp-email', enviarOtpEmail);
 app.post('/api/auth/validar-otp-email', validarOtpEmail);
 
@@ -53,10 +54,5 @@ app.use("/dadosbairros", dadosBairrosRoutes);
 app.use("/dadoslogradouros", dadosLogradourosRoutes); 
 app.use("/dadosmunicipios", dadosMunicipiosRoutes); 
 app.use("/dadosgerais", dadosGeraisRoutes);
-
-const PORT = process.env.PORT || 3002;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
 
 module.exports = app;
