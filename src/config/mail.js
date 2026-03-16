@@ -1,16 +1,18 @@
 const nodemailer = require('nodemailer');
 
 const transporter = nodemailer.createTransport({
-  service: 'gmail', // Deixe o Nodemailer gerenciar os detalhes
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false, // OBRIGATÓRIO false para porta 587
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  // ADICIONE ESTE BLOCO ABAIXO:
-  pool: true, // Usa conexões persistentes
-  maxConnections: 1,
-  maxMessages: Infinity,
-  connectionTimeout: 10000, // 10 segundos
+  tls: {
+    // Isso evita que o Render bloqueie a conexão por falta de certificado local
+    rejectUnauthorized: false,
+    minVersion: "TLSv1.2"
+  }
 });
 
 transporter.verify((error, success) => {
