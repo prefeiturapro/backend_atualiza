@@ -100,13 +100,14 @@ const enviarOtpEmail = async (req, res) => {
         otpsEmail[email.toLowerCase()] = codigo;
 
         const mailOptions = {
-            from: `"PrefeituraPro - Verificação" <${process.env.EMAIL_USER}>`,
+            // AJUSTE: Remetente simplificado para evitar bloqueios de segurança do Gmail/SMTP
+            from: `"AtualizaAí" <${process.env.EMAIL_USER}>`,
             to: email.toLowerCase(),
             subject: `${codigo} é o seu código de verificação`,
             html: `
             <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e0e0e0; border-radius: 10px; padding: 20px;">
                 <div style="text-align: center; margin-bottom: 20px;">
-                    <h2 style="color: #0d6efd; margin: 0;">PrefeituraPro</h2>
+                    <h2 style="color: #0d6efd; margin: 0;">AtualizaAí</h2>
                     <p style="color: #6c757d; font-size: 14px;">Portal de Atualização Cadastral Municipal</p>
                 </div>
                 <hr style="border: 0; border-top: 1px solid #eee;">
@@ -124,6 +125,7 @@ const enviarOtpEmail = async (req, res) => {
             `
         };
 
+        // Envio do e-mail
         await transporter.sendMail(mailOptions);
         console.log(`Código de e-mail enviado para: ${email}`);
         res.json({ sucesso: true, mensagem: "E-mail enviado!" });

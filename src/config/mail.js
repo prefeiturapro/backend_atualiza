@@ -3,27 +3,24 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
   host: "smtp.gmail.com",
   port: 587,
-  secure: false, // TLS requer false para a porta 587
+  secure: false, // Obrigatório false para 587
+  pool: true,    // Mantém a conexão aberta para evitar novos timeouts
   auth: {
     user: process.env.EMAIL_USER,
     pass: process.env.EMAIL_PASS,
   },
-  // Estas configurações abaixo são fundamentais para o Render não dar timeout
-  connectionTimeout: 20000, // Aumenta para 20 segundos
-  greetingTimeout: 20000,
-  socketTimeout: 20000,
   tls: {
-    rejectUnauthorized: false, // Ignora erros de certificado que o Render causa
+    rejectUnauthorized: false, // Ignora bloqueios de certificado do Render
     minVersion: "TLSv1.2"
   }
 });
 
-// Verificação imediata
+// Verificação de segurança
 transporter.verify((error, success) => {
   if (error) {
-    console.error("[ERRO CRÍTICO MAIL.JS]:", error.message);
+    console.error("[MAIL] Erro de Conexão:", error.message);
   } else {
-    console.log("✅ VITÓRIA! Conexão com o Gmail estabelecida com sucesso.");
+    console.log("[MAIL] ✅ Conexão estabelecida com sucesso!");
   }
 });
 

@@ -197,8 +197,9 @@ const enviarComprovante = async (req, res) => {
             ? clientes[0].nm_cliente 
             : "Prefeitura Municipal";
 
+        // CORREÇÃO: Remetente simplificado para evitar Timeouts no Render
         await transporter.sendMail({
-            from: `"${nomePrefeitura}" <${process.env.EMAIL_USER}>`,
+            from: `"AtualizaAí" <${process.env.EMAIL_USER}>`,
             to: email,
             subject: `Protocolo de Atualização: ${protocolo}`,
             html: `
@@ -229,18 +230,18 @@ const validarPedidoPrefeitura = async (req, res) => {
 
         if (acao === 'CANCELAR') {
             try {
-                // AJUSTADO: Garante o uso da variável correta definida no .env profissional
                 await client.messages.create({
                     messagingServiceSid: process.env.TWILIO_MESSAGE_SERVICE_SID,
                     to: `+55${pedido.nr_telefone_atual.replace(/\D/g, "")}`,
-                    body: `PrefeituraPro: Ola ${pedido.nm_contribuinte.split(' ')[0]}, seu pedido de atualizacao foi indeferido. Verifique seu e-mail para detalhes.`
+                    body: `AtualizaAí: Ola ${pedido.nm_contribuinte.split(' ')[0]}, seu pedido de atualizacao foi indeferido. Verifique seu e-mail para detalhes.`
                 });
             } catch (err) { console.error("Erro SMS Profissional:", err.message); }
 
             if (pedido.ds_email_atual) {
                 try {
+                    // CORREÇÃO: Remetente simplificado para evitar Timeouts no Render
                     await transporter.sendMail({
-                        from: `"Prefeitura" <${process.env.EMAIL_USER}>`,
+                        from: `"AtualizaAí" <${process.env.EMAIL_USER}>`,
                         to: pedido.ds_email_atual,
                         subject: "Pedido Indeferido",
                         html: `<p>Olá ${pedido.nm_contribuinte}, seu pedido foi indeferido por motivos de inconsistências. Favor procurar a Secretaria da Fazenda para maiores informações.</p>`

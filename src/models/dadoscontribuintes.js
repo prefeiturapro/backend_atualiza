@@ -7,25 +7,30 @@ const pdfParse = typeof pdfParseRaw === 'function' ? pdfParseRaw : pdfParseRaw.d
 
 /**
  * CONFIGURAÇÃO DO GOOGLE VISION
- * Tenta ler da variável de ambiente (Render/Produção) 
- * ou do arquivo local (Desenvolvimento)
+ * Prioriza a variável de ambiente (Render) para evitar erros de arquivo inexistente
  */
 let visionConfig = {};
 
-if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON.trim() !== "") {
     // Para o Render: Lê o JSON direto da variável de ambiente
     try {
         visionConfig = { 
             credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) 
         };
+        console.log("[VISION] Configuração carregada via variável de ambiente.");
     } catch (err) {
-        console.error("Erro ao dar parse no JSON da Google Key no Render:", err.message);
+        console.error("[VISION] Erro crítico ao processar GOOGLE_APPLICATION_CREDENTIALS_JSON:", err.message);
     }
 } else {
-    // Para o PC Local: Usa o arquivo físico
-    visionConfig = { 
-        keyFilename: path.join(__dirname, '../../config/google-key.json') 
-    };
+    // Para o PC Local: Usa o arquivo físico google-key.json
+    try {
+        visionConfig = { 
+            keyFilename: path.join(__dirname, '../../config/google-key.json') 
+        };
+        console.log("[VISION] Configuração carregada via arquivo local.");
+    } catch (err) {
+        console.warn("[VISION] Arquivo local não encontrado. Certifique-se de configurar a variável no Render.");
+    }
 }
 
 const client = new vision.ImageAnnotatorClient(visionConfig);
@@ -69,7 +74,7 @@ async function extrairTextoDocumento(buffer, isPdf) {
         return result.fullTextAnnotation ? result.fullTextAnnotation.text : '';
 
     } catch (error) {
-        console.error("Erro detalhado no Model Vision:", error.message);
+        console.error("[VISION] Erro detalhado no Model:", error.message);
         throw error;
     }
 }
@@ -130,7 +135,7 @@ async function atualizarContribuinte(dados) {
         await pool.query(sql, values);
         return { sucesso: true };
     } catch (error) {
-        console.error("Erro ao inserir novo registro no banco:", error);
+        console.error("[DATABASE] Erro ao inserir registro:", error.message);
         throw error;
     }
 }
