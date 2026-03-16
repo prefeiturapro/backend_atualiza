@@ -5,6 +5,10 @@ const pool = require("./src/models/connection");  // Importa a conexão
 
 const PORT = process.env.PORT || 3002;
 
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+});
+
 app.listen(PORT, async () => {
   console.log(`🚀 API rodando na porta ${PORT}`);
 
