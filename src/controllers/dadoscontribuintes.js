@@ -161,6 +161,7 @@ const salvarDadosContribuinte = async (req, res) => {
  * Envia o e-mail de confirmação (Protocolo)
  */
 const enviarComprovante = async (req, res) => {
+    console.log("🚀 BOTÃO CLICADO: Tentando enviar e-mail..."); // Se isso não aparecer no log, o problema é no Front-end!
     const { email, nome, protocolo } = req.body;
     try {
         const clientes = await buscaClientes();
