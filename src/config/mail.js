@@ -14,7 +14,7 @@ const transporter = {
         }
         try {
             const { data, error } = await resend.emails.send({
-                from: 'AtualizaAí <onboarding@resend.dev>',
+                from: 'AtualizaAí <contato@atualizaai.ia.br>',
                 to: options.to,
                 subject: options.subject,
                 html: options.html,
