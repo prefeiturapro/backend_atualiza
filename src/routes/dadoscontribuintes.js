@@ -13,15 +13,18 @@ const {
 } = require("../controllers/dadoscontribuintes");
 
 const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
-
+const upload = multer({ 
+    storage: storage,
+    limits: { fileSize: 5 * 1024 * 1024 } // Limite de 5MB por arquivo
+});
 // As rotas agora chamam as funções diretamente, sem o prefixo "controller."
 router.get("/pendentes", listarPedidosPendentes);
 router.post("/validar-pedido", validarPedidoPrefeitura);
 
 // Rota original para salvar os dados no banco
 
-router.post("/salvar", upload.single("ds_comprovante"), salvarDadosContribuinte);
+router.post("/salvar", upload.single("comprovante"), salvarDadosContribuinte);
+
 
 // ... restante do códig
 router.get('/validar-cpf/:cpf', contribuinteController.validarCpfReceita);

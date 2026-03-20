@@ -45,7 +45,7 @@ const dadosbairros = async (req, res) => {
     return res.json({
         auth: true,
         nm_bairro: bairro.nm_bairro,
-        cd_bairro: bairro.cd_bairro,
+        cd_bairro: bairro.cd_bairro        
     });
 
   } catch (error) {

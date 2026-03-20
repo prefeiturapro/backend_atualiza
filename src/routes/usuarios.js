@@ -1,9 +1,33 @@
 const express = require("express");
 const router = express.Router();
 
-// Importe o controller que criamos (certifique-se que o nome da função está correto)
-const { loginUsuario } = require("../controllers/usuarios"); 
+const {
+    loginUsuario,
+    proximoCdUsuario,
+    listarUsuarios,
+    buscarUsuarioPorId,
+    criarUsuario,
+    atualizarUsuario,
+    alterarSenha,
+    bloquearUsuario,
+    desbloquearUsuario,
+    excluirUsuario
+} = require("../controllers/usuarios");
 
+// Autenticação
 router.post("/login", loginUsuario);
+
+// Utilitários
+router.get("/proximo-codigo", proximoCdUsuario);
+
+// CRUD
+router.get("/listar", listarUsuarios);
+router.get("/:id", buscarUsuarioPorId);
+router.post("/salvar", criarUsuario);
+router.put("/atualizar/:id", atualizarUsuario);
+router.put("/alterar-senha/:id", alterarSenha);
+router.put("/bloquear/:id", bloquearUsuario);
+router.put("/desbloquear/:id", desbloquearUsuario);
+router.delete("/excluir/:id", excluirUsuario);
 
 module.exports = router;

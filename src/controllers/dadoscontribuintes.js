@@ -146,14 +146,40 @@ const processarComprovante = async (req, res) => {
 };
 
 const salvarDadosContribuinte = async (req, res) => {
-    const dados = req.body;
-    if (!dados.cd_contribuinte) return res.status(400).json({ erro: "Código obrigatório." });
+    console.log("--- DEBUG: INÍCIO DO SALVAMENTO ---");
     try {
-        await atualizarContribuinte(dados);
-        return res.json({ mensagem: "Sucesso!" });
+        console.log("Arquivo recebido:", req.file ? req.file.originalname : "NENHUM ARQUIVO");
+
+        if (!req.body.dados) {
+            console.error("ERRO: req.body.dados está vazio!");
+            return res.status(400).json({ erro: "Dados ausentes no corpo da requisição." });        
+        }
+        
+        // CORREÇÃO: Extraindo dados do FormData e arquivo do buffer
+        if (!req.body.dados) return res.status(400).json({ erro: "Dados ausentes." });
+        
+        const dados = JSON.parse(req.body.dados);
+        console.log("Dados parseados com sucesso para o contribuinte:", dados.nm_contribuinte);
+        
+        const arquivoBinario = req.file ? req.file.buffer : null;
+        const nomeArquivoOriginal = req.file ? req.file.originalname : null;
+
+        if (!dados.cd_contribuinte) return res.status(400).json({ erro: "Código obrigatório." });
+
+        console.log("Chamando atualizarContribuinte no Model...");
+        await atualizarContribuinte(dados, arquivoBinario, nomeArquivoOriginal);
+
+        
+       console.log("--- DEBUG: SALVO COM SUCESSO ---");
+       return res.json({ mensagem: "Sucesso!" });
     } catch (error) {
+        console.error("--- 🚨 ERRO CRÍTICO NO CONTROLLER 🚨 ---");
+        console.error("Mensagem:", error.message);
         console.error("Erro salvar:", error);
-        return res.status(500).json({ erro: "Erro banco." });
+       return res.status(500).json({ 
+            erro: "Erro interno no servidor.", 
+            detalhes: error.message 
+        });
     }
 };
 

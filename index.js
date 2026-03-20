@@ -30,6 +30,7 @@ const dadosBairrosRoutes = require("./src/routes/dadosbairros");
 const dadosLogradourosRoutes = require("./src/routes/dadoslogradouros"); 
 const dadosMunicipiosRoutes = require("./src/routes/dadosmunicipios"); 
 const dadosGeraisRoutes = require("./src/routes/dadosgerais");
+const dadosFormsRoutes = require("./src/routes/dadosforms");
 
 const { 
     enviarCodigo, 
@@ -54,6 +55,7 @@ app.use("/dadosbairros", dadosBairrosRoutes);
 app.use("/dadoslogradouros", dadosLogradourosRoutes); 
 app.use("/dadosmunicipios", dadosMunicipiosRoutes); 
 app.use("/dadosgerais", dadosGeraisRoutes);
+app.use("/dadosforms", dadosFormsRoutes);
 
 // Adicione isso no final do index.js para testar a conexão no início
 const transporter = require('./src/config/mail');

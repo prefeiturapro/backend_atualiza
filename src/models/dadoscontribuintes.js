@@ -7,12 +7,10 @@ const pdfParse = typeof pdfParseRaw === 'function' ? pdfParseRaw : pdfParseRaw.d
 
 /**
  * CONFIGURAÇÃO DO GOOGLE VISION
- * Prioriza a variável de ambiente (Render) para evitar erros de arquivo inexistente
  */
 let visionConfig = {};
 
 if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON.trim() !== "") {
-    // Para o Render: Lê o JSON direto da variável de ambiente
     try {
         visionConfig = { 
             credentials: JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) 
@@ -22,14 +20,13 @@ if (process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON && process.env.GOOGLE_APPLIC
         console.error("[VISION] Erro crítico ao processar GOOGLE_APPLICATION_CREDENTIALS_JSON:", err.message);
     }
 } else {
-    // Para o PC Local: Usa o arquivo físico google-key.json
     try {
         visionConfig = { 
             keyFilename: path.join(__dirname, '../../config/google-key.json') 
         };
         console.log("[VISION] Configuração carregada via arquivo local.");
     } catch (err) {
-        console.warn("[VISION] Arquivo local não encontrado. Certifique-se de configurar a variável no Render.");
+        console.warn("[VISION] Arquivo local não encontrado.");
     }
 }
 
@@ -81,61 +78,69 @@ async function extrairTextoDocumento(buffer, isPdf) {
 
 /**
  * Persistência no Banco de Dados
+ * ADICIONADO: suporte para buffer de arquivo e nome original
  */
-async function atualizarContribuinte(dados) {
+async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal = null) {
     const sql = `
         INSERT INTO database.dados_contribuintes (
             ds_inscricao_imovel, cd_reduzido_imovel, cd_contribuinte, nm_contribuinte, 
-            nr_cpf_atual, ds_comprovante, nr_telefone_atual, nm_rua_atual, 
+            nr_cpf_atual, nr_telefone_atual, nm_rua_atual, 
             ds_numero_atual, nr_cep_atual, ds_bairro_atual, ds_cidade_atual, 
             ds_email_atual, ds_obs, ds_protocolo, st_editado_manual, 
             nm_rua_extr, tp_rua_extr, ds_numero_extr, nr_cep_extr, 
             ds_bairro_extr, ds_cidade_extr, st_responsavel, ds_loteamento_atual, 
             ds_edificio_atual, ds_complemento_atual, ds_loteamento_extr, 
-            ds_edificio_extr, ds_complemento_extr, dt_atualizacao, hr_atualizacao
+            ds_edificio_extr, ds_complemento_extr, 
+            dt_atualizacao, hr_atualizacao,
+            ds_comprovante, nm_arquivo_original, st_validado_prefeitura
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, 
-            $26, $27, $28, $29, CURRENT_DATE, LOCALTIME(0)
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
+            $21, $22, $23, $24, $25, $26, $27, $28, 
+            CURRENT_DATE, LOCALTIME(0),
+            $29, $30, 'N'
         )
     `;
 
     const values = [
-        dados.ds_inscricao_imovel, 
-        dados.cd_reduzido_imovel, 
-        dados.cd_contribuinte, 
-        dados.nm_contribuinte, 
-        dados.nr_cpf_atual || '0', 
-        dados.ds_comprovante || '', 
-        dados.nr_telefone_atual, 
-        dados.nm_rua_atual, 
-        dados.ds_numero_atual, 
-        dados.nr_cep_atual, 
-        dados.ds_bairro_atual, 
-        dados.ds_cidade_atual, 
-        dados.ds_email_atual, 
-        dados.ds_obs, 
-        dados.ds_protocolo, 
-        dados.st_editado_manual, 
-        dados.nm_rua_extr, 
-        'RUA', 
-        dados.ds_numero_extr, 
-        dados.nr_cep_extr, 
-        dados.ds_bairro_extr, 
-        dados.ds_cidade_extr, 
-        dados.st_responsavel, 
-        dados.ds_loteamento_atual, 
-        dados.ds_edificio_atual, 
-        dados.ds_complemento_atual, 
-        dados.ds_loteamento_extr, 
-        dados.ds_edificio_extr, 
-        dados.ds_complemento_extr
+        dados.ds_inscricao_imovel || '',     // $1
+        dados.cd_reduzido_imovel || 0,       // $2
+        dados.cd_contribuinte || 0,          // $3
+        dados.nm_contribuinte || '',         // $4
+        dados.nr_cpf_atual || '',            // $5
+        dados.nr_telefone_atual || '',       // $6
+        dados.nm_rua_atual || '',            // $7
+        dados.ds_numero_atual || '',         // $8
+        dados.nr_cep_atual || '',            // $9
+        dados.ds_bairro_atual || '',         // $10
+        dados.ds_cidade_atual || '',         // $11
+        dados.ds_email_atual || '',          // $12
+        dados.ds_obs || 'Atualização Web',   // $13
+        dados.ds_protocolo || '',            // $14
+        dados.st_editado_manual || 'N',      // $15
+        dados.nm_rua_extr || '',             // $16
+        'RUA',                               // $17
+        dados.ds_numero_extr || '',          // $18
+        dados.nr_cep_extr || '',             // $19
+        dados.ds_bairro_extr || '',          // $20
+        dados.ds_cidade_extr || '',          // $21
+        dados.st_responsavel || 'N',         // $22
+        dados.ds_loteamento_atual || '',     // $23
+        dados.ds_edificio_atual || '',       // $24
+        dados.ds_complemento_atual || '',    // $25
+        dados.ds_loteamento_extr || '',      // $26
+        dados.ds_edificio_extr || '',        // $27
+        dados.ds_complemento_extr || '',     // $28
+        arquivoBuffer,                       // $29
+        nomeOriginal                         // $30
     ];
 
     try {
         await pool.query(sql, values);
         return { sucesso: true };
     } catch (error) {
-        console.error("[DATABASE] Erro ao inserir registro:", error.message);
+        // ESSA LINHA ABAIXO VAI TE DIZER EXATAMENTE QUAL COLUNA ESTÁ DANDO ERRO NO TERMINAL
+        console.error("[DATABASE] Erro detalhado:", error.message);
         throw error;
     }
 }
