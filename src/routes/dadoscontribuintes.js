@@ -3,13 +3,16 @@ const router = express.Router();
 const multer = require("multer"); 
 const contribuinteController = require('../controllers/dadoscontribuintes');
 // CORREÇÃO AQUI: Importamos as funções específicas diretamente
-const { 
-    salvarDadosContribuinte, 
-    processarComprovante, 
-    listarPedidosPendentes, 
+const {
+    salvarDadosContribuinte,
+    processarComprovante,
+    listarPedidosPendentes,
+    listarHistoricoPedidos,
     validarPedidoPrefeitura,
     verificarStatusImovel,
-    enviarComprovante 
+    enviarComprovante,
+    listarComprovantesRecusados,
+    downloadComprovante
 } = require("../controllers/dadoscontribuintes");
 
 const storage = multer.memoryStorage();
@@ -19,6 +22,9 @@ const upload = multer({
 });
 // As rotas agora chamam as funções diretamente, sem o prefixo "controller."
 router.get("/pendentes", listarPedidosPendentes);
+router.get("/historico", listarHistoricoPedidos);
+router.get("/comprovantes-recusados", listarComprovantesRecusados);
+router.get("/download/:id", downloadComprovante);
 router.post("/validar-pedido", validarPedidoPrefeitura);
 
 // Rota original para salvar os dados no banco

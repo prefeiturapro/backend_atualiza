@@ -92,13 +92,14 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
             ds_edificio_atual, ds_complemento_atual, ds_loteamento_extr, 
             ds_edificio_extr, ds_complemento_extr, 
             dt_atualizacao, hr_atualizacao,
-            ds_comprovante, nm_arquivo_original, st_validado_prefeitura
+            ds_comprovante, nm_arquivo_original, st_validado_prefeitura, st_extracao,
+            st_rua_extr, st_bairro_extr
         ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 
-            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, 
-            $21, $22, $23, $24, $25, $26, $27, $28, 
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+            $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
+            $21, $22, $23, $24, $25, $26, $27, $28,
             CURRENT_DATE, LOCALTIME(0),
-            $29, $30, 'N'
+            $29, $30, 'N', $31, $32, $33
         )
     `;
 
@@ -111,7 +112,7 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
         dados.nr_telefone_atual || '',       // $6
         dados.nm_rua_atual || '',            // $7
         dados.ds_numero_atual || '',         // $8
-        dados.nr_cep_atual || '',            // $9
+        (dados.nr_cep_atual || '').replace(/\D/g, ''),  // $9 — remove máscara (ex: "88810-421" → "88810421")
         dados.ds_bairro_atual || '',         // $10
         dados.ds_cidade_atual || '',         // $11
         dados.ds_email_atual || '',          // $12
@@ -121,7 +122,7 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
         dados.nm_rua_extr || '',             // $16
         'RUA',                               // $17
         dados.ds_numero_extr || '',          // $18
-        dados.nr_cep_extr || '',             // $19
+        (dados.nr_cep_extr || '').replace(/\D/g, ''),   // $19 — remove máscara
         dados.ds_bairro_extr || '',          // $20
         dados.ds_cidade_extr || '',          // $21
         dados.st_responsavel || 'N',         // $22
@@ -132,7 +133,10 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
         dados.ds_edificio_extr || '',        // $27
         dados.ds_complemento_extr || '',     // $28
         arquivoBuffer,                       // $29
-        nomeOriginal                         // $30
+        nomeOriginal,                        // $30
+        dados.st_extracao || 'S',            // $31
+        dados.st_rua_extr    || 'S',         // $32
+        dados.st_bairro_extr || 'S'          // $33
     ];
 
     try {

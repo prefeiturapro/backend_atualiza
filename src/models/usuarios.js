@@ -88,6 +88,24 @@ async function buscarUsuarioPorId(id) {
     }
 }
 
+// ─── BUSCAR POR CPF ───────────────────────────────────────────────────────────
+
+async function buscarUsuarioPorCpf(nr_cpf) {
+    const sql = `
+        SELECT id_usuarios, nm_usuario, ds_email, st_bloqueado
+        FROM master.usuarios
+        WHERE nr_cpf = $1
+        LIMIT 1
+    `;
+    try {
+        const { rows } = await pool.query(sql, [nr_cpf]);
+        return rows[0] || null;
+    } catch (error) {
+        console.error("[MODEL] Erro ao buscar por CPF:", error.message);
+        return null;
+    }
+}
+
 // ─── VERIFICAR DUPLICIDADE ────────────────────────────────────────────────────
 
 async function verificarUsuarioExistente(nm_usuario, ignorarId = null) {
@@ -225,6 +243,7 @@ module.exports = {
     buscaUsuarios,
     listarUsuarios,
     buscarUsuarioPorId,
+    buscarUsuarioPorCpf,
     verificarUsuarioExistente,
     verificarCpfExistente,
     proximoCdUsuario,

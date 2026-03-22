@@ -32,7 +32,8 @@ async function buscarConfiguracoes(req, res) {
             st_logincertificado: dados.st_logincertificado,
             st_aprovacaoaut: dados.st_aprovacaoaut,
             st_login_cod_cont: dados.st_login_cod_cont,
-            st_bloqueiacmc: dados.st_bloqueiacmc
+            st_bloqueiacmc: dados.st_bloqueiacmc,
+            st_obrigaemail: dados.st_obrigaemail || 'N'
         });
 
     } catch (error) {

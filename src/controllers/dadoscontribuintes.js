@@ -9,135 +9,529 @@ const axios = require('axios');
 const client = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 /**
- * Função para processar o comprovante via OCR ou Extração Direta
+ * Normaliza string para comparação: remove acentos, maiúsculas, espaços extras
+ */
+// ─── Normalização ─────────────────────────────────────────────────────────────
+function norm(str) {
+    if (!str) return "";
+    return str.toUpperCase()
+        .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .replace(/\t/g, " ").replace(/ {2,}/g, " ").trim();
+}
+
+// ─── Helpers de extração ──────────────────────────────────────────────────────
+
+function extrairCep(T) {
+    const m = T.match(/(\d{5})[.\s-]?(\d{3})(?!\d)/);
+    return m ? m[1] + m[2] : "";
+}
+function formatarCep(cep) {
+    return cep.length === 8 ? `${cep.slice(0, 5)}-${cep.slice(5)}` : cep;
+}
+
+const SKIP_NOME = /LTDA|S\.?A\.?|S\/A|PREFEITURA|CELESC|CASAN|SABESP|ENEL|CPFL|COPEL|EQUATORIAL|ENERGISA|COELBA|LIGHT|COMGAS|COOPERATIVA|CONCESSIONARIA|SECRETARIA|BANCO|COMPANHIA|NOTA FISCAL|FATURA|VENCIMENTO|CONSUMO|INTERNET|TELEFONE|ENERGIA|AGUA|GAS|TRIBUTO|IMPOSTO|SERVICO|CNPJ|PROTOCOLO|DOCUMENTO|DISTRIBUICAO|DANFE|ELETRONICA|CLIENTE|MEDIDOR|UNIDADE/;
+
+function extrairNome(T) {
+    // 1. Label explícito — usa [A-Z .] (sem \n) para não capturar a linha seguinte
+    const mL = T.match(/(?:NOME|TITULAR|CLIENTE|CONSUMIDOR|CONTRIBUINTE|PROPRIETARIO|BENEFICIARIO)[:\s]+([A-Z][A-Z .]{5,55})(?=\n|CPF|CNPJ|END|RUA|AV|CEP|BAIRRO|NASC|DATA)/);
+    if (mL) return mL[1].trim();
+    // 2. Heurística: linha com 3+ palavras todas-letras sem keywords
+    let cand = "";
+    for (const linha of T.split('\n').map(l => l.trim()).filter(Boolean)) {
+        if (linha.length < 8 || linha.length > 60) continue;
+        if (!/^[A-Z][A-Z\s\.]+$/.test(linha) || SKIP_NOME.test(linha)) continue;
+        const p = linha.split(' ').filter(Boolean).length;
+        if (p >= 3) return linha;
+        if (p === 2 && !cand) cand = linha;
+    }
+    return cand;
+}
+
+function extrairComplemento(T) {
+    const partes = [];
+    const rA = T.match(/\b(?:APTO?\.?|APARTAMENTO)\s*:?\s*(\d+[A-Z]?)\b/);
+    const rS = T.match(/\bSALA\s*:?\s*(\d+[A-Z]?)\b/);
+    const rC = T.match(/\bCASA\s*:?\s*(\d+[A-Z]?)\b/);
+    const rB = T.match(/\b(?:BLOCO|BL)\s*:?\s*([A-Z0-9]+)\b/);
+    if (rA) partes.push(`APTO ${rA[1]}`);
+    if (rS) partes.push(`SALA ${rS[1]}`);
+    if (rC && !rA) partes.push(`CASA ${rC[1]}`);
+    if (rB) partes.push(`BL ${rB[1]}`);
+    return partes.join(' ').trim();
+}
+
+/**
+ * Parseia uma linha de endereço no formato mais comum dos comprovantes BR:
+ * "LOGRADOURO NUMERO COMPLEMENTO - BAIRRO"  (CELESC/ENEL sem tipo de rua)
+ * "RUA LOGRADOURO, NUMERO, COMPLEMENTO"      (com vírgulas)
+ * "RUA LOGRADOURO NUMERO COMPLEMENTO"        (sem separadores)
+ */
+function parsearLinhaEndereco(linha) {
+    let bairroExtr = "";
+
+    // Separar bairro pelo " - " (lado direito)
+    const dashIdx = linha.search(/\s+-\s+/);
+    if (dashIdx > 0) {
+        bairroExtr = linha.substring(dashIdx).replace(/^\s*-\s*/, "").trim();
+        linha = linha.substring(0, dashIdx).trim();
+    }
+
+    // Padrão com vírgula: "RUA NOME, 123, COMPLEMENTO"
+    const mComma = linha.match(/^(.*?),\s*(\d{1,6}[A-Z]?),?\s*(.*)$/);
+    if (mComma) {
+        return { ruaExtr: mComma[1].trim(), numeroExtr: mComma[2].trim(), complementoExtr: (mComma[3] || "").trim(), bairroExtr };
+    }
+
+    // Padrão com "Nº / N. / N°"
+    const mNLabel = linha.match(/^(.*?)\s+N[O°º]?\.?\s*(\d{1,6}[A-Z]?)\s*(.*)$/);
+    if (mNLabel) {
+        return { ruaExtr: mNLabel[1].trim(), numeroExtr: mNLabel[2].trim(), complementoExtr: mNLabel[3].trim(), bairroExtr };
+    }
+
+    // Padrão geral: primeiro número isolado = número da casa
+    const mNum = linha.match(/^(.*?)\s+(\d{1,6}[A-Z]?)\s*(.*)$/);
+    if (mNum) {
+        return { ruaExtr: mNum[1].trim(), numeroExtr: mNum[2].trim(), complementoExtr: mNum[3].trim(), bairroExtr };
+    }
+
+    return { ruaExtr: linha, numeroExtr: "", complementoExtr: "", bairroExtr };
+}
+
+// ─── Parsers específicos por tipo de comprovante ──────────────────────────────
+
+/**
+ * CELESC / COOPERALIANÇA
+ * ENDERECO: LOGRADOURO NUMERO COMPLEMENTO - BAIRRO
+ * CEP: XXXXX-XXX   CIDADE: CIDADE UF
+ */
+function parsearCelesc(T) {
+    const nome = extrairNome(T);
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+
+    const mEnd = T.match(/ENDERECO[:\s]+([^\n]{5,150})/);
+    if (mEnd) {
+        const p = parsearLinhaEndereco(mEnd[1].trim());
+        ruaExtr = p.ruaExtr; numeroExtr = p.numeroExtr;
+        complementoExtr = p.complementoExtr; bairroExtr = p.bairroExtr;
+    }
+
+    // "CEP: 88800-000  CIDADE: CRICIUMA SC"
+    const mCC = T.match(/CEP[:\s.]+(\d{5}[\s.-]?\d{3})\s+CIDADE[:\s]+([A-Z][A-Z\s]+?)\s+([A-Z]{2})(?=\s|\n|$)/);
+    const cepRaw = mCC ? mCC[1].replace(/\D/g, "") : extrairCep(T);
+    if (mCC) cidadeExtr = mCC[2].trim();
+
+    if (!cidadeExtr) {
+        const mCid = T.match(/CIDADE[:\s]+([A-Z][A-Z\s]+?)\s+([A-Z]{2})(?=\s|\n|$)/);
+        if (mCid) cidadeExtr = mCid[1].trim();
+    }
+
+    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr, cepFormatado: formatarCep(cepRaw), edificioExtr: "", loteamentoExtr: "" };
+}
+
+/**
+ * CASAN (água SC) / SABESP / COPASA / SANEPAR
+ * Formato: campos individuais em linhas separadas
+ * NOME: ...  ENDERECO: ...  BAIRRO: ...  CIDADE/UF: ...  CEP: ...
+ */
+function parsearSaneamento(T) {
+    const nome = extrairNome(T);
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+
+    const mEnd = T.match(/(?:ENDERECO|LOGRADOURO)[:\s]+([^\n]{5,150})/);
+    if (mEnd) {
+        const p = parsearLinhaEndereco(mEnd[1].trim());
+        ruaExtr = p.ruaExtr; numeroExtr = p.numeroExtr;
+        complementoExtr = p.complementoExtr; bairroExtr = p.bairroExtr;
+    }
+    if (!numeroExtr) {
+        const mN = T.match(/(?:NUMERO|N[UÚ]MERO|NRO|N[O°º])[:\s]+(\d{1,6}[A-Z]?)/);
+        if (mN) numeroExtr = mN[1];
+    }
+    const mBairro = T.match(/BAIRRO[:\s]+([A-Z][A-Z\s]{2,40})(?=\n|CEP|CIDADE|MUN|\/[A-Z]{2})/);
+    if (mBairro && !bairroExtr) bairroExtr = mBairro[1].trim();
+
+    const mCid = T.match(/(?:CIDADE|MUNICIPIO|MUN)[:\s]+([A-Z][A-Z\s]+?)\s+([A-Z]{2})(?=\s|\n|$|\/)/);
+    if (mCid) cidadeExtr = mCid[1].trim();
+    else {
+        const mCidUF = T.match(/([A-Z][A-Z\s]{2,25}?)\/([A-Z]{2})\b/);
+        if (mCidUF && !/RUA|AV|CNPJ|CPF/.test(mCidUF[1])) cidadeExtr = mCidUF[1].trim();
+    }
+
+    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr, cepFormatado: formatarCep(extrairCep(T)), edificioExtr: "", loteamentoExtr: "" };
+}
+
+/**
+ * ENEL / CPFL / LIGHT / EQUATORIAL / ENERGISA / COPEL (energia)
+ * Normalmente trazem "ENDERECO:" com RUA, NUM, COMPL e BAIRRO: separado
+ */
+function parsearEnergiaGenerica(T) {
+    const nome = extrairNome(T);
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+
+    const mEnd = T.match(/(?:ENDERECO|LOGRADOURO)[:\s]+([^\n]{5,150})/);
+    if (mEnd) {
+        const p = parsearLinhaEndereco(mEnd[1].trim());
+        ruaExtr = p.ruaExtr; numeroExtr = p.numeroExtr;
+        complementoExtr = p.complementoExtr; bairroExtr = p.bairroExtr;
+    }
+    if (!numeroExtr) {
+        const mN = T.match(/(?:NUMERO|N[UÚ]MERO|NRO|N[O°º])[:\s]+(\d{1,6}[A-Z]?)/);
+        if (mN) numeroExtr = mN[1];
+    }
+    if (!complementoExtr) complementoExtr = extrairComplemento(T);
+
+    const mBairro = T.match(/BAIRRO[:\s]+([A-Z][A-Z\s]{2,40})(?=\n|CEP|CIDADE|MUN|\/[A-Z]{2})/);
+    if (mBairro && !bairroExtr) bairroExtr = mBairro[1].trim();
+
+    // Cidade: prefere label; fallback só após CEP (evita capturar cidade da empresa no header)
+    const mCidLabel = T.match(/(?:CIDADE|MUNICIPIO|MUN)[:\s]+([A-Z][A-Z\s]+?)\s+([A-Z]{2})(?=\s|\n|$)/);
+    if (mCidLabel) {
+        cidadeExtr = mCidLabel[1].trim();
+    } else {
+        const cepRaw = extrairCep(T);
+        if (cepRaw) {
+            const afterCep = T.substring(T.indexOf(cepRaw) + cepRaw.length);
+            const mCidUF = afterCep.match(/([A-Z][A-Z\s]{2,25}?)\/([A-Z]{2})\b/);
+            if (mCidUF && !/RUA|AV|CNPJ|CPF/.test(mCidUF[1])) cidadeExtr = mCidUF[1].trim();
+        }
+    }
+
+    const rEdif = T.match(/\b(?:EDIFICIO|EDIF)\s+([A-Z][A-Z\s0-9]{2,30})(?=,|\n|AP|BL)/);
+    const rLote = T.match(/\bLOTEAMENTO\s+([A-Z][A-Z\s0-9]{2,30})(?=,|\n)/);
+
+    return {
+        nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr,
+        cepFormatado: formatarCep(extrairCep(T)),
+        edificioExtr: rEdif ? rEdif[1].trim() : "",
+        loteamentoExtr: rLote ? rLote[1].trim() : ""
+    };
+}
+
+/**
+ * SAMAE (Serviço Autônomo Municipal de Água e Esgoto)
+ * O endereço fica na linha de inscrição: "NNN.NNN.NNN.NNNN.NNN R. NOME, NUM XXXX - BAIRRO CIDADE"
+ * O CEP está na linha da empresa: "CIDADE UF NNNNN-NNN"
+ * O label "ENDERECO DO IMOVEL" é um cabeçalho de seção, sem valor na mesma linha.
+ */
+function parsearSamae(T) {
+    // Nome: "TITULAR:" ou "PROPRIETARIO:" — parar na primeira \n para não duplicar
+    let nome = "";
+    const mTit = T.match(/(?:TITULAR|PROPRIETARIO)[:\s]+([A-Z][A-Z .]{5,55})(?=\n)/);
+    if (mTit) nome = mTit[1].trim();
+    if (!nome) nome = extrairNome(T);
+
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+
+    // Endereço: linha com número de inscrição (NNN.NNN.NNN.NNNN.NNN) seguido do logradouro
+    const mAddr = T.match(/\d{3}(?:\.\d+){4}\s+(.+?)(?:\n|$)/);
+    if (mAddr) {
+        let addrLine = mAddr[1].trim();
+
+        // Separar bairro/cidade pelo " - "
+        const dashIdx = addrLine.search(/\s+-\s+/);
+        if (dashIdx > 0) {
+            bairroExtr = addrLine.substring(dashIdx).replace(/^\s*-\s*/, "").trim();
+            addrLine = addrLine.substring(0, dashIdx).trim();
+        }
+
+        // Extrair número: ", NUM 1478" ou ", 1478"
+        const mNum = addrLine.match(/,?\s*NUM\s+(\d{1,6}[A-Z]?)\s*(.*)$/) ||
+                     addrLine.match(/,\s*(\d{1,6}[A-Z]?)\s*(.*)$/);
+        if (mNum) {
+            numeroExtr = mNum[1];
+            complementoExtr = (mNum[2] || "").trim();
+            addrLine = addrLine.substring(0, addrLine.lastIndexOf(mNum[0])).replace(/,\s*$/, "").trim();
+        }
+
+        // Remover prefixo de inscrição caso tenha sobrado
+        addrLine = addrLine.replace(/^\d[\d.]*\s+/, "").trim();
+        ruaExtr = addrLine;
+    }
+
+    // CEP e cidade: busca "CITY UF NNNNN-NNN" evitando capturar números de documento
+    let cepRaw = "";
+    const mCepAfterUF = T.match(/\b([A-Z]{2})\s+(\d{5})-(\d{3})\b/);
+    if (mCepAfterUF) {
+        cepRaw = mCepAfterUF[2] + mCepAfterUF[3];
+        const idxMatch = T.indexOf(mCepAfterUF[0]);
+        const lineStart = T.lastIndexOf('\n', idxMatch) + 1;
+        const beforeUF = T.substring(lineStart, idxMatch).trim();
+        cidadeExtr = beforeUF; // ex: "BALNEARIO RINCAO"
+    } else {
+        cepRaw = extrairCep(T);
+    }
+
+    // Limpar cidade do final do bairro (ex: "PRAIA DO RINCAO BALNEARIO" → "PRAIA DO RINCAO")
+    if (cidadeExtr && bairroExtr) {
+        const firstCityWord = cidadeExtr.split(' ')[0];
+        if (bairroExtr.endsWith(' ' + firstCityWord)) {
+            bairroExtr = bairroExtr.substring(0, bairroExtr.lastIndexOf(' ' + firstCityWord)).trim();
+        }
+    }
+
+    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr,
+             cepFormatado: formatarCep(cepRaw), edificioExtr: "", loteamentoExtr: "" };
+}
+
+/**
+ * COOPERALIANÇA
+ * O endereço do cliente aparece logo após o nome, sem label "ENDERECO:".
+ * Bairro e cidade estão no formato "BAIRRO / CIDADE-UF".
+ * CEP pode ter espaço no meio: "88 836-000".
+ */
+function parsearCooperalianca(T) {
+    const nome = extrairNome(T);
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+
+    // Endereço do cliente: primeira linha com tipo de logradouro que aparece APÓS o nome
+    // (evita capturar a rua da empresa, que vem antes do nome no texto)
+    if (nome) {
+        const idxNome = T.indexOf(nome);
+        if (idxNome >= 0) {
+            const aposNome = T.substring(idxNome + nome.length);
+            const mEnd = aposNome.match(/\n([A-Z]{2,10}\.?\s+[^\n]{5,150})/);
+            if (mEnd) {
+                const p = parsearLinhaEndereco(mEnd[1].trim());
+                ruaExtr = p.ruaExtr; numeroExtr = p.numeroExtr; complementoExtr = p.complementoExtr;
+            }
+        }
+    }
+
+    // Bairro / Cidade-UF: "RINCAO ZONA SUL / BALNEARIO RINCAO-SC"
+    const mBC = T.match(/([A-Z][A-Z\s]+?)\s*\/\s*([A-Z][A-Z\s]+?)-([A-Z]{2})\b/);
+    if (mBC) {
+        bairroExtr = mBC[1].trim();
+        cidadeExtr = mBC[2].trim();
+    }
+
+    // CEP: "CEP: 88 836-000" — dois dígitos separados por espaço antes do hífen
+    const mCep = T.match(/CEP[:\s]+(\d{2})\s*(\d{3})-(\d{3})/);
+    const cepRaw = mCep ? mCep[1] + mCep[2] + mCep[3] : extrairCep(T);
+
+    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr,
+             cepFormatado: formatarCep(cepRaw), edificioExtr: "", loteamentoExtr: "" };
+}
+
+/**
+ * Parser genérico — fallback para qualquer comprovante não identificado.
+ * Combina todas as estratégias disponíveis.
+ */
+function parsearGenerico(T) {
+    // Usa o parser de energia genérica como base (mais abrangente)
+    const resultado = parsearEnergiaGenerica(T);
+
+    // Se não extraiu rua ainda, tenta linha começando por tipo de logradouro
+    if (!resultado.ruaExtr) {
+        const TIPOS = 'RUA|AVENIDA|AV|TRAVESSA|TV|ALAMEDA|AL|ESTRADA|RODOVIA|ROD|PRACA|PCA|LARGO|VIELA|SERVIDAO|CAMINHO|LINHA|QUADRA';
+        const tiposRx = new RegExp(`^(${TIPOS})\\.?\\s+(.+)$`);
+        for (const linha of T.split('\n').map(l => l.trim())) {
+            if (tiposRx.test(linha)) {
+                const p = parsearLinhaEndereco(linha);
+                resultado.ruaExtr = p.ruaExtr;
+                resultado.numeroExtr = p.numeroExtr || resultado.numeroExtr;
+                resultado.complementoExtr = p.complementoExtr || resultado.complementoExtr;
+                if (!resultado.bairroExtr) resultado.bairroExtr = p.bairroExtr;
+                break;
+            }
+        }
+    }
+
+    return resultado;
+}
+
+/**
+ * Dispatcher — detecta o tipo de comprovante e chama o parser adequado.
+ */
+function parsearComprovante(T) {
+    if (T.includes("CELESC"))         return parsearCelesc(T);
+    if (T.includes("COOPERALIANCA"))  return parsearCooperalianca(T);
+    if (T.includes("SAMAE"))          return parsearSamae(T);
+    if (T.includes("CASAN") ||
+        T.includes("SABESP") ||
+        T.includes("SANEPAR") ||
+        T.includes("COPASA") ||
+        T.includes("CEDAE"))          return parsearSaneamento(T);
+    if (T.includes("ENEL") ||
+        T.includes("CPFL") ||
+        T.includes("COPEL") ||
+        T.includes("EQUATORIAL") ||
+        T.includes("ENERGISA") ||
+        T.includes("COELBA") ||
+        T.includes("LIGHT"))          return parsearEnergiaGenerica(T);
+    return parsearGenerico(T);
+}
+
+/**
+ * Busca a correspondência mais próxima de uma cidade em database.municipios
+ */
+async function buscarMunicipioDB(nomeCidade) {
+    if (!nomeCidade) return null;
+    try {
+        const { rows } = await pool.query(`
+            SELECT id_municipios, nm_municipio,
+                   similarity(unaccent(nm_municipio), unaccent($1)) AS score
+            FROM database.municipios
+            WHERE unaccent(nm_municipio) % unaccent($1)
+               OR unaccent(nm_municipio) ILIKE unaccent('%' || $1 || '%')
+            ORDER BY score DESC LIMIT 1
+        `, [nomeCidade]);
+        return (rows.length > 0 && rows[0].score > 0.2) ? rows[0] : null;
+    } catch (e) {
+        console.error("[OCR] Erro ao buscar município:", e.message);
+        return null;
+    }
+}
+
+/**
+ * Retorna o id_municipios configurado em master.dados_gerais
+ */
+async function buscarIdMunicipioSede() {
+    try {
+        const { rows } = await pool.query(`SELECT id_municipios FROM master.dados_gerais LIMIT 1`);
+        return rows[0]?.id_municipios ?? null;
+    } catch (e) {
+        console.error("[OCR] Erro ao buscar sede:", e.message);
+        return null;
+    }
+}
+
+/**
+ * Busca logradouro mais similar em database.logradouros
+ */
+async function buscarLogradouroDB(nome) {
+    if (!nome) return null;
+    try {
+        const { rows } = await pool.query(`
+            SELECT l.nm_logradouro, b.nm_bairro AS nm_bairro_padrao,
+                   similarity(unaccent(l.nm_logradouro), unaccent($1)) AS score
+            FROM database.logradouros l
+            LEFT JOIN database.bairros b ON b.id_bairros = l.id_bairros
+            WHERE unaccent(l.nm_logradouro) % unaccent($1)
+               OR unaccent(l.nm_logradouro) ILIKE unaccent('%' || $1 || '%')
+            ORDER BY score DESC LIMIT 1
+        `, [nome]);
+        return (rows.length > 0 && rows[0].score > 0.25) ? rows[0] : null;
+    } catch (e) {
+        console.error("[OCR] Erro ao buscar logradouro:", e.message);
+        return null;
+    }
+}
+
+/**
+ * Busca bairro mais similar em database.bairros
+ */
+async function buscarBairroDB(nome) {
+    if (!nome) return null;
+    try {
+        const { rows } = await pool.query(`
+            SELECT nm_bairro,
+                   similarity(unaccent(nm_bairro), unaccent($1)) AS score
+            FROM database.bairros
+            WHERE unaccent(nm_bairro) % unaccent($1)
+               OR unaccent(nm_bairro) ILIKE unaccent('%' || $1 || '%')
+            ORDER BY score DESC LIMIT 1
+        `, [nome]);
+        return (rows.length > 0 && rows[0].score > 0.25) ? rows[0] : null;
+    } catch (e) {
+        console.error("[OCR] Erro ao buscar bairro:", e.message);
+        return null;
+    }
+}
+
+/**
+ * Processa o comprovante via OCR (Google Vision) e enriquece com dados do banco
  */
 const processarComprovante = async (req, res) => {
     try {
-        if (!req.file) {
-            return res.status(400).json({ erro: "Nenhum arquivo enviado." });
-        }
+        if (!req.file) return res.status(400).json({ erro: "Nenhum arquivo enviado." });
 
         const isPdf = req.file.mimetype === 'application/pdf';
         const textoBruto = await extrairTextoDocumento(req.file.buffer, isPdf);
 
-        console.log("--- TEXTO CAPTURADO (DIGITAL OU OCR) ---");
+        console.log("--- TEXTO OCR CAPTURADO ---");
         console.log(textoBruto);
-        console.log("----------------------------------------");
+        console.log("---------------------------");
 
         if (!textoBruto || textoBruto.trim().length < 5) {
             return res.status(422).json({ erro: "Não foi possível extrair dados legíveis do documento." });
         }
 
-        const textoLimpo = textoBruto.toUpperCase();
-        const isCelesc = textoLimpo.includes("CELESC");
-        
-        let nomeCandidato = "NOME NÃO IDENTIFICADO";
+        // ── 1. Dispatcher de parsers por tipo de comprovante ─────────────────
+        const T = norm(textoBruto);
+        const { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr, cepFormatado, edificioExtr, loteamentoExtr } = parsearComprovante(T);
 
-        if (isCelesc) {
-            const matchNomeCelesc = textoLimpo.match(/NOME[:\s]+([A-ZÀ-Ú\s\.\-]+?)(?:\s+UNIDADE|CPF|[\n\r])/i);
-            if (matchNomeCelesc) nomeCandidato = matchNomeCelesc[1].trim();
-        }
+        // ── 2. Resolver cidade no banco ──────────────────────────────────────
+        const municipioMatch = await buscarMunicipioDB(cidadeExtr);
+        const cidadeOficial = municipioMatch ? municipioMatch.nm_municipio : cidadeExtr;
+        const idMunicipioEncontrado = municipioMatch ? municipioMatch.id_municipios : null;
 
-        if (nomeCandidato === "NOME NÃO IDENTIFICADO") {
-            const linhas = textoLimpo.split('\n');
-            const termosEmpresa = [
-                "COOPERATIVA", "ALIANCA", "CELESC", "CASAN", "SANEAMENTO", "ENERGIA", 
-                "LTDA", "CNPJ", "PREFEITURA", "SECRETARIA", "BANCO", "SA", "S/A", "SERVIÇOS",
-                "SABESP", "COPASA", "CEDAE", "COMPESA", "SANEPAR", "ENEL", "CPFL", "EQUATORIAL",
-                "ENERGISA", "COELBA", "LIGHT", "VIA POSTAL", "NOTA FISCAL", "ELETRONICA", "ESTATAL",
-                "TOTAL A PAGAR", "VENCIMENTO", "CONSUMO"
-            ];
+        // ── 3. Verificar se é o mesmo município da sede ──────────────────────
+        const idSede = await buscarIdMunicipioSede();
+        const isMesmoMunicipio = idSede !== null && idSede === idMunicipioEncontrado;
 
-            for (let linha of linhas) {
-                const linhaTrimmada = linha.trim();
-                if (linhaTrimmada.length > 10 && 
-                    !termosEmpresa.some(t => linhaTrimmada.includes(t)) && 
-                    /^[A-ZÀ-Ú\s\.\-]+$/.test(linhaTrimmada)) {
-                    
-                    nomeCandidato = linhaTrimmada;
-                    if (linhaTrimmada.split(' ').length >= 3) break; 
-                }
-            }
-        }
+        // ── 4. Resolver logradouro e bairro (só se mesmo município) ──────────
+        let ruaOficial = ruaExtr;
+        let bairroOficial = bairroExtr;
+        let logradouroMatchFound = false;
+        let bairroMatchFound = false;
 
-        const indexNome = textoLimpo.indexOf(nomeCandidato);
-        const textoAposNome = indexNome !== -1 ? textoLimpo.substring(indexNome) : textoLimpo;
-        const blocoEndereco = textoAposNome.substring(0, 450); 
-
-        let matchRuaStr = "", matchNumStr = "", matchBairroStr = "CENTRO", matchCepStr = "";
-
-        if (isCelesc) {
-            const regexCelescRua = blocoEndereco.match(/ENDERECO[:\s]+([A-ZÀ-Ú\s\.\-]+?)\s+(\d{1,5})/i);
-            
-            if (regexCelescRua) {
-                matchRuaStr = regexCelescRua[1].trim(); 
-                matchNumStr = regexCelescRua[2];      
-            } else {
-                const linhaEnd = blocoEndereco.match(/ENDERECO[:\s]+(.+?)(?:\s+CEP|$)/i);
-                if (linhaEnd) {
-                    const textoEnd = linhaEnd[1];
-                    const findNum = textoEnd.match(/(\d{1,5})/);
-                    if (findNum) {
-                        matchNumStr = findNum[1];
-                        matchRuaStr = textoEnd.split(matchNumStr)[0].trim();
-                    }
-                }
+        if (isMesmoMunicipio) {
+            const logradouroMatch = await buscarLogradouroDB(ruaExtr);
+            if (logradouroMatch) {
+                ruaOficial = logradouroMatch.nm_logradouro;
+                logradouroMatchFound = true;
             }
 
-            const findBairro = blocoEndereco.match(/-\s+([A-ZÀ-Ú\s]+?)\s+CEP/i);
-            if (findBairro) matchBairroStr = findBairro[1].trim();
+            // Tenta localizar bairro pela extração OCR
+            const bairroExtracaoCurta = !bairroExtr || bairroExtr.trim().length < 4;
+            const bairroMatch = !bairroExtracaoCurta ? await buscarBairroDB(bairroExtr) : null;
 
-        } else {
-            const matchRua = blocoEndereco.match(/(?:RUA|AV|AVENIDA|ESTRADA)[:\s]+([A-ZÀ-Ú\s\d]+?)(?:\s\(|,)/i);
-            const matchNumero = blocoEndereco.match(/,\s*(\d{1,5})/);
-            const matchBairro = blocoEndereco.match(/([A-ZÀ-Ú\s]+)\s\/\s(?:BALNEÁRIO|CRICIÚMA|IÇARA)/i);
-            
-            matchRuaStr = matchRua ? matchRua[1].trim() : "";
-            matchNumStr = matchNumero ? matchNumero[1].trim() : "";
-            matchBairroStr = matchBairro ? matchBairro[1].trim() : "CENTRO";
+            if (bairroMatch) {
+                bairroOficial = bairroMatch.nm_bairro;
+                bairroMatchFound = true;
+            } else if (logradouroMatch?.nm_bairro_padrao) {
+                // Fallback: bairro padrão associado ao logradouro no banco
+                bairroOficial = logradouroMatch.nm_bairro_padrao;
+                bairroMatchFound = true;
+            }
+        }
+        // Se outro município: deixa os campos com o valor extraído para edição manual
+
+        // ── 5. Definir flag de qualidade da extração ─────────────────────────
+        // 'N' = extração falhou em campo crítico (nome, logradouro ou bairro no mesmo município)
+        let st_extracao = 'S';
+        if (!nome) {
+            st_extracao = 'N';
+        } else if (isMesmoMunicipio && (!logradouroMatchFound || !bairroMatchFound)) {
+            st_extracao = 'N';
         }
 
-        const matchCep = blocoEndereco.match(/CEP[:\s]+(\d{2}\s?\d{3}-?\d{3})/i) || 
-                         blocoEndereco.match(/(\d{5}-?\d{3})/);
-        matchCepStr = matchCep ? (matchCep[1] || matchCep[0]).replace(/\D/g, "") : "";
-
-        let cidadeFinal = "CRICIÚMA";
-        if (blocoEndereco.includes("RINCÃO") || blocoEndereco.includes("RINCAO")) {
-            cidadeFinal = "BALNEÁRIO RINCÃO";
-        } else if (blocoEndereco.includes("IÇARA") || blocoEndereco.includes("ICARA")) {
-            cidadeFinal = "IÇARA";
-        }
-
-        let matchLoteamento = "", matchEdificio = "", matchComplemento = "";
-        
-        const regexApto = blocoEndereco.match(/(?:APTO|APARTAMENTO|AP)\s?(\d+[A-Z]?)/i);
-        const regexBloco = blocoEndereco.match(/(?:BL|BLOCO)\s?([A-Z0-9]+)/i);
-        const regexEdif = blocoEndereco.match(/(?:EDIFÍCIO|EDIF|ED)\.?\s+([A-ZÀ-Ú\s0-9]+?)(?:,|\n|$)/i);
-        const regexLote = blocoEndereco.match(/(?:LOTEAMENTO|LOTE)\s+([A-ZÀ-Ú\s0-9]+?)(?:,|\n|$)/i);
-
-        if (regexApto) matchComplemento += `AP ${regexApto[1]} `;
-        if (regexBloco) matchComplemento += `BL ${regexBloco[1]}`;
-        if (regexEdif) matchEdificio = regexEdif[1].trim();
-        if (regexLote) matchLoteamento = regexLote[1].trim();
-
-        const dadosExtraidos = {
-            nm_contribuinte: nomeCandidato,
-            nr_cpf_atual: "",
-            nr_cep_atual: matchCepStr,
-            nm_rua_atual: matchRuaStr,
-            ds_numero_atual: matchNumStr,
-            ds_bairro_atual: matchBairroStr,
-            ds_cidade_atual: cidadeFinal,
-            ds_loteamento_extr: matchLoteamento,
-            ds_edificio_extr: matchEdificio,
-            ds_complemento_extr: matchComplemento.trim(),
-            ds_loteamento_atual: matchLoteamento,
-            ds_edificio_atual: matchEdificio,
-            ds_complemento_atual: matchComplemento.trim(),
-            ds_obs: `Extraído via ${isCelesc ? 'Celesc' : 'Cooperaliança'} (${isPdf ? 'PDF' : 'Imagem'})`
-        };
-
-        return res.json(dadosExtraidos);
+        // ── 6. Retorno ───────────────────────────────────────────────────────
+        return res.json({
+            nm_contribuinte:     nome,
+            nr_cpf_atual:        "",
+            nr_cep_atual:        cepFormatado,
+            nm_rua_extr:         ruaExtr,
+            nm_rua_atual:        ruaOficial,
+            ds_numero_extr:      numeroExtr,
+            ds_numero_atual:     numeroExtr,
+            ds_bairro_extr:      bairroExtr,
+            ds_bairro_atual:     bairroOficial,
+            ds_cidade_extr:      cidadeExtr,
+            ds_cidade_atual:     cidadeOficial,
+            nr_cep_extr:         cepFormatado,
+            ds_loteamento_extr:  loteamentoExtr,
+            ds_loteamento_atual: loteamentoExtr,
+            ds_edificio_extr:    edificioExtr,
+            ds_edificio_atual:   edificioExtr,
+            ds_complemento_extr: complementoExtr,
+            ds_complemento_atual: complementoExtr,
+            ds_obs: `Extraído via OCR (${isPdf ? 'PDF' : 'Imagem'})`,
+            isMesmoMunicipio,
+            st_extracao,
+            st_rua_extr:    isMesmoMunicipio ? (logradouroMatchFound ? 'S' : 'N') : 'S',
+            st_bairro_extr: isMesmoMunicipio ? (bairroMatchFound    ? 'S' : 'N') : 'S'
+        });
 
     } catch (error) {
         console.error("Erro no Controller OCR:", error);
@@ -223,6 +617,38 @@ const enviarComprovante = async (req, res) => {
     }
 };
 
+const listarHistoricoPedidos = async (req, res) => {
+    const { status, edicao } = req.query;
+    const stFiltro = status === "C" ? "C" : "S";
+
+    let sql = `
+        SELECT dc.*,
+               ua.nm_usuario AS nm_usuarioaprov,
+               ur.nm_usuario AS nm_usuariorepr
+        FROM database.dados_contribuintes dc
+        LEFT JOIN master.usuarios ua ON ua.id_usuarios = dc.id_usuarioaprov
+        LEFT JOIN master.usuarios ur ON ur.id_usuarios = dc.id_usuariorepr
+        WHERE dc.st_validado_prefeitura = $1
+    `;
+
+    const params = [stFiltro];
+
+    if (edicao && edicao !== "TODOS") {
+        sql += ` AND dc.st_editado_manual = $${params.length + 1}`;
+        params.push(edicao);
+    }
+
+    sql += ` ORDER BY dc.dt_atualizacao DESC, dc.hr_atualizacao DESC`;
+
+    try {
+        const { rows } = await pool.query(sql, params);
+        res.json(rows);
+    } catch (error) {
+        console.error("Erro ao listar histórico:", error);
+        res.status(500).json({ erro: "Erro ao carregar histórico." });
+    }
+};
+
 const listarPedidosPendentes = async (req, res) => {
     const { status } = req.query; 
     let sql = `
@@ -249,7 +675,7 @@ const listarPedidosPendentes = async (req, res) => {
 };
 
 const validarPedidoPrefeitura = async (req, res) => {
-    const { id, acao } = req.body; 
+    const { id, acao, id_usuarioaprov, dt_aprov, hr_aprov, id_usuariorepr, dt_repro, hr_repro } = req.body;
     try {
         const pedidoQuery = await pool.query("SELECT * FROM database.dados_contribuintes WHERE id_dados_contribuintes = $1", [id]);
         if (pedidoQuery.rows.length === 0) return res.status(404).json({ erro: "Não encontrado." });
@@ -280,10 +706,26 @@ const validarPedidoPrefeitura = async (req, res) => {
                     });
                 } catch (err) { console.error("Erro Email Indeferimento:", err.message); }
             }
-            await pool.query("UPDATE database.dados_contribuintes SET st_validado_prefeitura = 'C' WHERE id_dados_contribuintes = $1", [id]);
+            await pool.query(
+                `UPDATE database.dados_contribuintes
+                 SET st_validado_prefeitura = 'C',
+                     id_usuariorepr = $2,
+                     dt_repro = $3,
+                     hr_repro = $4
+                 WHERE id_dados_contribuintes = $1`,
+                [id, id_usuariorepr || null, dt_repro || null, hr_repro || null]
+            );
             return res.json({ sucesso: true });
         } else {
-            await pool.query("UPDATE database.dados_contribuintes SET st_validado_prefeitura = 'S' WHERE id_dados_contribuintes = $1", [id]);
+            await pool.query(
+                `UPDATE database.dados_contribuintes
+                 SET st_validado_prefeitura = 'S',
+                     id_usuarioaprov = $2,
+                     dt_aprov = $3,
+                     hr_aprov = $4
+                 WHERE id_dados_contribuintes = $1`,
+                [id, id_usuarioaprov || null, dt_aprov || null, hr_aprov || null]
+            );
             return res.json({ sucesso: true });
         }
     } catch (error) {
@@ -330,12 +772,59 @@ const verificarStatusImovel = async (req, res) => {
     }
 };
 
-module.exports = { 
-    salvarDadosContribuinte, 
+const downloadComprovante = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await pool.query(
+            `SELECT ds_comprovante, nm_arquivo_original FROM database.dados_contribuintes WHERE id_dados_contribuintes = $1`,
+            [id]
+        );
+        if (!rows.length || !rows[0].ds_comprovante) {
+            return res.status(404).json({ erro: "Arquivo não encontrado." });
+        }
+        const { ds_comprovante, nm_arquivo_original } = rows[0];
+        const nomeArquivo = nm_arquivo_original || `comprovante_${id}`;
+        const ext = nomeArquivo.split('.').pop().toLowerCase();
+        const mimeTypes = { pdf: 'application/pdf', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp' };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${nomeArquivo}"`);
+        res.send(ds_comprovante);
+    } catch (error) {
+        console.error("Erro ao baixar comprovante:", error);
+        res.status(500).json({ erro: "Erro ao recuperar arquivo." });
+    }
+};
+
+const listarComprovantesRecusados = async (req, res) => {
+    try {
+        const { rows } = await pool.query(`
+            SELECT id_dados_contribuintes, ds_protocolo, nm_contribuinte,
+                   nm_rua_atual, nm_rua_extr, st_rua_extr,
+                   ds_bairro_atual, ds_bairro_extr, st_bairro_extr,
+                   ds_cidade_atual, ds_cidade_extr, nr_cep_atual,
+                   st_validado_prefeitura, dt_atualizacao, hr_atualizacao,
+                   nm_arquivo_original
+            FROM database.dados_contribuintes
+            WHERE st_extracao = 'N'
+            ORDER BY dt_atualizacao DESC, hr_atualizacao DESC
+        `);
+        res.json(rows);
+    } catch (error) {
+        console.error("Erro ao listar comprovantes recusados:", error);
+        res.status(500).json({ erro: "Erro ao carregar lista." });
+    }
+};
+
+module.exports = {
+    salvarDadosContribuinte,
     processarComprovante,
     listarPedidosPendentes,
+    listarHistoricoPedidos,
     validarPedidoPrefeitura,
     validarCpfReceita,
     verificarStatusImovel,
-    enviarComprovante
+    enviarComprovante,
+    listarComprovantesRecusados,
+    downloadComprovante
 };

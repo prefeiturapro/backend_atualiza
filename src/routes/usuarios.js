@@ -3,6 +3,7 @@ const router = express.Router();
 
 const {
     loginUsuario,
+    recuperarSenha,
     proximoCdUsuario,
     listarUsuarios,
     buscarUsuarioPorId,
@@ -16,6 +17,7 @@ const {
 
 // Autenticação
 router.post("/login", loginUsuario);
+router.post("/recuperar-senha", recuperarSenha);
 
 // Utilitários
 router.get("/proximo-codigo", proximoCdUsuario);
