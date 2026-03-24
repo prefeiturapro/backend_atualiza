@@ -1,8 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const multer = require("multer"); 
+const multer = require("multer");
+const { exigirAuth } = require("../middleware/auth");
+const { ocrLimiter } = require("../middleware/rateLimiters");
+
 const contribuinteController = require('../controllers/dadoscontribuintes');
-// CORREÇÃO AQUI: Importamos as funções específicas diretamente
 const {
     salvarDadosContribuinte,
     processarComprovante,
@@ -12,33 +14,43 @@ const {
     verificarStatusImovel,
     enviarComprovante,
     listarComprovantesRecusados,
-    downloadComprovante
+    downloadComprovante,
+    listarLoteamentos,
+    listarEdificios
 } = require("../controllers/dadoscontribuintes");
 
 const storage = multer.memoryStorage();
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 } // Limite de 5MB por arquivo
+
+// Validação de tipo de arquivo no multer (primeira camada de defesa)
+const fileFilter = (req, file, cb) => {
+    const tiposPermitidos = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+    if (tiposPermitidos.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        cb(new Error('Tipo de arquivo não permitido. Envie JPG, PNG, WebP ou PDF.'), false);
+    }
+};
+
+const upload = multer({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    fileFilter
 });
-// As rotas agora chamam as funções diretamente, sem o prefixo "controller."
-router.get("/pendentes", listarPedidosPendentes);
-router.get("/historico", listarHistoricoPedidos);
-router.get("/comprovantes-recusados", listarComprovantesRecusados);
-router.get("/download/:id", downloadComprovante);
-router.post("/validar-pedido", validarPedidoPrefeitura);
 
-// Rota original para salvar os dados no banco
+// ─── ROTAS PÚBLICAS (formulário do cidadão) ────────────────────────────────
+router.get("/loteamentos",                  listarLoteamentos);
+router.get("/edificios",                    listarEdificios);
+router.get("/verificar-status/:reduzido",   verificarStatusImovel);
+router.get('/validar-cpf/:cpf',             contribuinteController.validarCpfReceita);
+router.post("/salvar",      upload.single("comprovante"), salvarDadosContribuinte);
+router.post("/enviar-comprovante",          enviarComprovante);
+router.post("/processar-comprovante",       ocrLimiter, upload.single("comprovante"), processarComprovante);
 
-router.post("/salvar", upload.single("comprovante"), salvarDadosContribuinte);
-
-
-// ... restante do códig
-router.get('/validar-cpf/:cpf', contribuinteController.validarCpfReceita);
-
-router.get("/verificar-status/:reduzido", verificarStatusImovel);
-
-// Rota de OCR
-router.post("/processar-comprovante", upload.single("comprovante"), processarComprovante);
-router.post("/enviar-comprovante", enviarComprovante);
+// ─── ROTAS ADMIN (exigem JWT) ──────────────────────────────────────────────
+router.get("/pendentes",                    exigirAuth, listarPedidosPendentes);
+router.get("/historico",                    exigirAuth, listarHistoricoPedidos);
+router.get("/comprovantes-recusados",       exigirAuth, listarComprovantesRecusados);
+router.get("/download/:id",                 exigirAuth, downloadComprovante);
+router.post("/validar-pedido",              exigirAuth, validarPedidoPrefeitura);
 
 module.exports = router;

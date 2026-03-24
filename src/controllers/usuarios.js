@@ -1,5 +1,6 @@
 const model = require("../models/usuarios");
 const transporter = require("../config/mail");
+const jwt = require("jsonwebtoken");
 
 // ─── PRÓXIMO CÓDIGO ───────────────────────────────────────────────────────────
 
@@ -33,8 +34,15 @@ const loginUsuario = async (req, res) => {
             return res.status(403).json({ erro: "Usuário bloqueado. Contate o administrador." });
         }
 
+        const token = jwt.sign(
+            { id_usuarios: usuario.id_usuarios, cd_usuario: usuario.cd_usuario, nome: usuario.nm_usuario },
+            process.env.JWT_SECRET,
+            { expiresIn: '8h' }
+        );
+
         return res.json({
             auth: true,
+            token,
             id_usuarios: usuario.id_usuarios,
             cd_usuario: usuario.cd_usuario,
             nome: usuario.nm_usuario,

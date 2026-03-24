@@ -83,24 +83,27 @@ async function extrairTextoDocumento(buffer, isPdf) {
 async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal = null) {
     const sql = `
         INSERT INTO database.dados_contribuintes (
-            ds_inscricao_imovel, cd_reduzido_imovel, cd_contribuinte, nm_contribuinte, 
-            nr_cpf_atual, nr_telefone_atual, nm_rua_atual, 
-            ds_numero_atual, nr_cep_atual, ds_bairro_atual, ds_cidade_atual, 
-            ds_email_atual, ds_obs, ds_protocolo, st_editado_manual, 
-            nm_rua_extr, tp_rua_extr, ds_numero_extr, nr_cep_extr, 
-            ds_bairro_extr, ds_cidade_extr, st_responsavel, ds_loteamento_atual, 
-            ds_edificio_atual, ds_complemento_atual, ds_loteamento_extr, 
-            ds_edificio_extr, ds_complemento_extr, 
+            ds_inscricao_imovel, cd_reduzido_imovel, cd_contribuinte, nm_contribuinte,
+            nr_cpf_atual, nr_telefone_atual, nm_rua_atual,
+            ds_numero_atual, nr_cep_atual, ds_bairro_atual, ds_cidade_atual,
+            ds_email_atual, ds_obs, nr_exercicio, st_editado_manual,
+            nm_rua_extr, tp_rua_extr, ds_numero_extr, nr_cep_extr,
+            ds_bairro_extr, ds_cidade_extr, st_responsavel, ds_loteamento_atual,
+            ds_edificio_atual, ds_complemento_atual, ds_loteamento_extr,
+            ds_edificio_extr, ds_complemento_extr,
             dt_atualizacao, hr_atualizacao,
             ds_comprovante, nm_arquivo_original, st_validado_prefeitura, st_extracao,
-            st_rua_extr, st_bairro_extr
+            st_rua_extr, st_bairro_extr, id_loteamentos, id_edificios,
+            id_bairros, id_logradouros, id_municipioatual
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
             $21, $22, $23, $24, $25, $26, $27, $28,
             CURRENT_DATE, LOCALTIME(0),
-            $29, $30, 'N', $31, $32, $33
+            $29, $30, 'N', $31, $32, $33, $34, $35,
+            $36, $37, $38
         )
+        RETURNING nr_protocolo, nr_exercicio
     `;
 
     const values = [
@@ -117,7 +120,7 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
         dados.ds_cidade_atual || '',         // $11
         dados.ds_email_atual || '',          // $12
         dados.ds_obs || 'Atualização Web',   // $13
-        dados.ds_protocolo || '',            // $14
+        new Date().getFullYear(),            // $14 — nr_exercicio (ano atual)
         dados.st_editado_manual || 'N',      // $15
         dados.nm_rua_extr || '',             // $16
         'RUA',                               // $17
@@ -136,12 +139,18 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
         nomeOriginal,                        // $30
         dados.st_extracao || 'S',            // $31
         dados.st_rua_extr    || 'S',         // $32
-        dados.st_bairro_extr || 'S'          // $33
+        dados.st_bairro_extr || 'S',         // $33
+        dados.id_loteamentos   || null,      // $34
+        dados.id_edificios     || null,      // $35
+        dados.id_bairros       || null,      // $36
+        dados.id_logradouros   || null,      // $37
+        dados.id_municipioatual || null      // $38
     ];
 
     try {
-        await pool.query(sql, values);
-        return { sucesso: true };
+        const { rows } = await pool.query(sql, values);
+        const { nr_protocolo, nr_exercicio } = rows[0];
+        return { sucesso: true, nr_protocolo, nr_exercicio };
     } catch (error) {
         // ESSA LINHA ABAIXO VAI TE DIZER EXATAMENTE QUAL COLUNA ESTÁ DANDO ERRO NO TERMINAL
         console.error("[DATABASE] Erro detalhado:", error.message);

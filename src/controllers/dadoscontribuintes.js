@@ -107,12 +107,27 @@ function parsearLinhaEndereco(linha) {
 function parsearCelesc(T) {
     const nome = extrairNome(T);
     let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+    let edificioExtr = "";
 
-    const mEnd = T.match(/ENDERECO[:\s]+([^\n]{5,150})/);
+    const LABEL_RE = /^(?:CEP|CIDADE|CPF|CNPJ|REFERENCIA|VENCIMENTO|UNIDADE|GRUPO|CLIENTE|NOTA|CHAVE|PROTOCOLO|BANDEIRA|MEDIDOR|LEITURA)/;
+    const mEnd = T.match(/ENDERECO[:\s]+([^\n]{5,150})(?:\n([^\n]{0,120}))?/);
     if (mEnd) {
-        const p = parsearLinhaEndereco(mEnd[1].trim());
+        let linhaEnd = mEnd[1].trim();
+        // Se a próxima linha for continuação do endereço (não começa com label conhecido), concatena
+        if (mEnd[2]) {
+            const cont = mEnd[2].trim();
+            if (cont && !LABEL_RE.test(cont)) linhaEnd = linhaEnd + " " + cont;
+        }
+        const p = parsearLinhaEndereco(linhaEnd);
         ruaExtr = p.ruaExtr; numeroExtr = p.numeroExtr;
         complementoExtr = p.complementoExtr; bairroExtr = p.bairroExtr;
+
+        // Extrai edifício do complemento: "AP 603 ED MONTMARTRE" → edificio="MONTMARTRE", complemento="AP 603"
+        const mEdif = complementoExtr.match(/\b(?:EDIFICIO|EDIF\.?|ED\.?)\s+([A-Z][A-Z\s0-9]{2,30})(?=\s*$)/);
+        if (mEdif) {
+            edificioExtr = mEdif[1].trim();
+            complementoExtr = complementoExtr.substring(0, complementoExtr.lastIndexOf(mEdif[0])).trim();
+        }
     }
 
     // "CEP: 88800-000  CIDADE: CRICIUMA SC"
@@ -125,7 +140,7 @@ function parsearCelesc(T) {
         if (mCid) cidadeExtr = mCid[1].trim();
     }
 
-    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr, cepFormatado: formatarCep(cepRaw), edificioExtr: "", loteamentoExtr: "" };
+    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr, cepFormatado: formatarCep(cepRaw), edificioExtr, loteamentoExtr: "" };
 }
 
 /**
@@ -396,13 +411,55 @@ async function buscarIdMunicipioSede() {
 }
 
 /**
+ * Busca loteamento mais similar em database.loteamentos
+ */
+async function buscarLoteamentoDB(nome) {
+    if (!nome) return null;
+    try {
+        const { rows } = await pool.query(`
+            SELECT id_loteamentos, ds_loteamento,
+                   similarity(unaccent(ds_loteamento), unaccent($1)) AS score
+            FROM database.loteamentos
+            WHERE unaccent(ds_loteamento) % unaccent($1)
+               OR unaccent(ds_loteamento) ILIKE unaccent('%' || $1 || '%')
+            ORDER BY score DESC LIMIT 1
+        `, [nome]);
+        return (rows.length > 0 && rows[0].score > 0.25) ? rows[0] : null;
+    } catch (e) {
+        console.error("[OCR] Erro ao buscar loteamento:", e.message);
+        return null;
+    }
+}
+
+/**
+ * Busca edifício mais similar em database.edificios
+ */
+async function buscarEdificioDB(nome) {
+    if (!nome) return null;
+    try {
+        const { rows } = await pool.query(`
+            SELECT id_edificios, ds_edificio,
+                   similarity(unaccent(ds_edificio), unaccent($1)) AS score
+            FROM database.edificios
+            WHERE unaccent(ds_edificio) % unaccent($1)
+               OR unaccent(ds_edificio) ILIKE unaccent('%' || $1 || '%')
+            ORDER BY score DESC LIMIT 1
+        `, [nome]);
+        return (rows.length > 0 && rows[0].score > 0.25) ? rows[0] : null;
+    } catch (e) {
+        console.error("[OCR] Erro ao buscar edifício:", e.message);
+        return null;
+    }
+}
+
+/**
  * Busca logradouro mais similar em database.logradouros
  */
 async function buscarLogradouroDB(nome) {
     if (!nome) return null;
     try {
         const { rows } = await pool.query(`
-            SELECT l.nm_logradouro, b.nm_bairro AS nm_bairro_padrao,
+            SELECT l.id_logradouros, l.nm_logradouro, b.nm_bairro AS nm_bairro_padrao, b.id_bairros AS id_bairros_padrao,
                    similarity(unaccent(l.nm_logradouro), unaccent($1)) AS score
             FROM database.logradouros l
             LEFT JOIN database.bairros b ON b.id_bairros = l.id_bairros
@@ -424,7 +481,7 @@ async function buscarBairroDB(nome) {
     if (!nome) return null;
     try {
         const { rows } = await pool.query(`
-            SELECT nm_bairro,
+            SELECT id_bairros, nm_bairro,
                    similarity(unaccent(nm_bairro), unaccent($1)) AS score
             FROM database.bairros
             WHERE unaccent(nm_bairro) % unaccent($1)
@@ -469,16 +526,23 @@ const processarComprovante = async (req, res) => {
         const idSede = await buscarIdMunicipioSede();
         const isMesmoMunicipio = idSede !== null && idSede === idMunicipioEncontrado;
 
-        // ── 4. Resolver logradouro e bairro (só se mesmo município) ──────────
+        // ── 4. Resolver logradouro, bairro, loteamento e edifício (só se mesmo município) ──
         let ruaOficial = ruaExtr;
         let bairroOficial = bairroExtr;
+        let loteamentoOficial = loteamentoExtr;
+        let edificioOficial = edificioExtr;
         let logradouroMatchFound = false;
         let bairroMatchFound = false;
+        let idLogradouros = null;
+        let idBairros = null;
+        let idLoteamentos = null;
+        let idEdificios = null;
 
         if (isMesmoMunicipio) {
             const logradouroMatch = await buscarLogradouroDB(ruaExtr);
             if (logradouroMatch) {
                 ruaOficial = logradouroMatch.nm_logradouro;
+                idLogradouros = logradouroMatch.id_logradouros;
                 logradouroMatchFound = true;
             }
 
@@ -488,11 +552,29 @@ const processarComprovante = async (req, res) => {
 
             if (bairroMatch) {
                 bairroOficial = bairroMatch.nm_bairro;
+                idBairros = bairroMatch.id_bairros;
                 bairroMatchFound = true;
             } else if (logradouroMatch?.nm_bairro_padrao) {
                 // Fallback: bairro padrão associado ao logradouro no banco
                 bairroOficial = logradouroMatch.nm_bairro_padrao;
+                idBairros = logradouroMatch.id_bairros_padrao ?? null;
                 bairroMatchFound = true;
+            }
+
+            if (loteamentoExtr) {
+                const loteamentoMatch = await buscarLoteamentoDB(loteamentoExtr);
+                if (loteamentoMatch) {
+                    loteamentoOficial = loteamentoMatch.ds_loteamento;
+                    idLoteamentos = loteamentoMatch.id_loteamentos;
+                }
+            }
+
+            if (edificioExtr) {
+                const edificioMatch = await buscarEdificioDB(edificioExtr);
+                if (edificioMatch) {
+                    edificioOficial = edificioMatch.ds_edificio;
+                    idEdificios = edificioMatch.id_edificios;
+                }
             }
         }
         // Se outro município: deixa os campos com o valor extraído para edição manual
@@ -521,9 +603,14 @@ const processarComprovante = async (req, res) => {
             ds_cidade_atual:     cidadeOficial,
             nr_cep_extr:         cepFormatado,
             ds_loteamento_extr:  loteamentoExtr,
-            ds_loteamento_atual: loteamentoExtr,
+            ds_loteamento_atual: loteamentoOficial,
             ds_edificio_extr:    edificioExtr,
-            ds_edificio_atual:   edificioExtr,
+            ds_edificio_atual:   edificioOficial,
+            id_logradouros:      idLogradouros,
+            id_bairros:          idBairros,
+            id_loteamentos:      idLoteamentos,
+            id_edificios:        idEdificios,
+            id_municipioatual:   idMunicipioEncontrado,
             ds_complemento_extr: complementoExtr,
             ds_complemento_atual: complementoExtr,
             ds_obs: `Extraído via OCR (${isPdf ? 'PDF' : 'Imagem'})`,
@@ -561,11 +648,14 @@ const salvarDadosContribuinte = async (req, res) => {
         if (!dados.cd_contribuinte) return res.status(400).json({ erro: "Código obrigatório." });
 
         console.log("Chamando atualizarContribuinte no Model...");
-        await atualizarContribuinte(dados, arquivoBinario, nomeArquivoOriginal);
+        const resultado = await atualizarContribuinte(dados, arquivoBinario, nomeArquivoOriginal);
 
-        
-       console.log("--- DEBUG: SALVO COM SUCESSO ---");
-       return res.json({ mensagem: "Sucesso!" });
+        console.log("--- DEBUG: SALVO COM SUCESSO ---");
+        return res.json({
+            mensagem: "Sucesso!",
+            nr_protocolo: resultado.nr_protocolo,
+            nr_exercicio: resultado.nr_exercicio
+        });
     } catch (error) {
         console.error("--- 🚨 ERRO CRÍTICO NO CONTROLLER 🚨 ---");
         console.error("Mensagem:", error.message);
@@ -799,7 +889,7 @@ const downloadComprovante = async (req, res) => {
 const listarComprovantesRecusados = async (req, res) => {
     try {
         const { rows } = await pool.query(`
-            SELECT id_dados_contribuintes, ds_protocolo, nm_contribuinte,
+            SELECT id_dados_contribuintes, nr_protocolo, nr_exercicio, nm_contribuinte,
                    nm_rua_atual, nm_rua_extr, st_rua_extr,
                    ds_bairro_atual, ds_bairro_extr, st_bairro_extr,
                    ds_cidade_atual, ds_cidade_extr, nr_cep_atual,
@@ -816,6 +906,28 @@ const listarComprovantesRecusados = async (req, res) => {
     }
 };
 
+const listarLoteamentos = async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT id_loteamentos, cd_loteamento, ds_loteamento FROM database.loteamentos ORDER BY ds_loteamento`
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ erro: "Erro ao listar loteamentos." });
+    }
+};
+
+const listarEdificios = async (req, res) => {
+    try {
+        const { rows } = await pool.query(
+            `SELECT id_edificios, cd_edificio, ds_edificio FROM database.edificios ORDER BY ds_edificio`
+        );
+        res.json(rows);
+    } catch (error) {
+        res.status(500).json({ erro: "Erro ao listar edifícios." });
+    }
+};
+
 module.exports = {
     salvarDadosContribuinte,
     processarComprovante,
@@ -826,5 +938,7 @@ module.exports = {
     verificarStatusImovel,
     enviarComprovante,
     listarComprovantesRecusados,
-    downloadComprovante
+    downloadComprovante,
+    listarLoteamentos,
+    listarEdificios
 };

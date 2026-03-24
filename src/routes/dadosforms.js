@@ -1,5 +1,6 @@
 const express = require("express");
 const router = express.Router();
+const { exigirAuth } = require("../middleware/auth");
 
 const {
     listarForms,
@@ -9,10 +10,10 @@ const {
     excluirForm
 } = require("../controllers/dadosforms");
 
-router.get("/listar", listarForms);
-router.get("/:id", buscarFormPorId);
-router.post("/salvar", criarForm);
-router.put("/atualizar/:id", atualizarForm);
-router.delete("/excluir/:id", excluirForm);
+router.get("/listar",           exigirAuth, listarForms);
+router.get("/:id",              exigirAuth, buscarFormPorId);
+router.post("/salvar",          exigirAuth, criarForm);
+router.put("/atualizar/:id",    exigirAuth, atualizarForm);
+router.delete("/excluir/:id",   exigirAuth, excluirForm);
 
 module.exports = router;

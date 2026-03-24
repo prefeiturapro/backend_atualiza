@@ -1,5 +1,7 @@
 const express = require("express");
 const router = express.Router();
+const { exigirAuth } = require("../middleware/auth");
+const { loginLimiter, recuperarSenhaLimiter } = require("../middleware/rateLimiters");
 
 const {
     loginUsuario,
@@ -15,21 +17,19 @@ const {
     excluirUsuario
 } = require("../controllers/usuarios");
 
-// Autenticação
-router.post("/login", loginUsuario);
-router.post("/recuperar-senha", recuperarSenha);
+// ─── ROTAS PÚBLICAS (sem JWT) ──────────────────────────────────────────────
+router.post("/login",           loginLimiter,          loginUsuario);
+router.post("/recuperar-senha", recuperarSenhaLimiter, recuperarSenha);
 
-// Utilitários
-router.get("/proximo-codigo", proximoCdUsuario);
-
-// CRUD
-router.get("/listar", listarUsuarios);
-router.get("/:id", buscarUsuarioPorId);
-router.post("/salvar", criarUsuario);
-router.put("/atualizar/:id", atualizarUsuario);
-router.put("/alterar-senha/:id", alterarSenha);
-router.put("/bloquear/:id", bloquearUsuario);
-router.put("/desbloquear/:id", desbloquearUsuario);
-router.delete("/excluir/:id", excluirUsuario);
+// ─── ROTAS ADMIN (exigem JWT) ──────────────────────────────────────────────
+router.get("/proximo-codigo",   exigirAuth, proximoCdUsuario);
+router.get("/listar",           exigirAuth, listarUsuarios);
+router.get("/:id",              exigirAuth, buscarUsuarioPorId);
+router.post("/salvar",          exigirAuth, criarUsuario);
+router.put("/atualizar/:id",    exigirAuth, atualizarUsuario);
+router.put("/alterar-senha/:id",exigirAuth, alterarSenha);
+router.put("/bloquear/:id",     exigirAuth, bloquearUsuario);
+router.put("/desbloquear/:id",  exigirAuth, desbloquearUsuario);
+router.delete("/excluir/:id",   exigirAuth, excluirUsuario);
 
 module.exports = router;
