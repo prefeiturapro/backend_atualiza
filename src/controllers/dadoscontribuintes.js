@@ -645,7 +645,7 @@ const salvarDadosContribuinte = async (req, res) => {
         const arquivoBinario = req.file ? req.file.buffer : null;
         const nomeArquivoOriginal = req.file ? req.file.originalname : null;
 
-        if (!dados.cd_contribuinte) return res.status(400).json({ erro: "Código obrigatório." });
+        if (dados.cd_contribuinte == null) return res.status(400).json({ erro: "Código obrigatório." });
 
         console.log("Chamando atualizarContribuinte no Model...");
         const resultado = await atualizarContribuinte(dados, arquivoBinario, nomeArquivoOriginal);
