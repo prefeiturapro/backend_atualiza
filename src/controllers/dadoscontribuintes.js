@@ -1,9 +1,10 @@
 const { atualizarContribuinte, extrairTextoDocumento } = require("../models/dadoscontribuintes");
 const { buscaClientes } = require("../models/dadosclientes");
-const pool = require("../models/connection"); 
-const transporter = require("../config/mail"); 
+const pool = require("../models/connection");
+const transporter = require("../config/mail");
 const twilio = require('twilio');
 const axios = require('axios');
+const { sincronizarContribuinteBauhaus } = require("../services/bauhaus");
 
 // INSTÂNCIA DO CLIENTE TWILIO
 const client = new twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -76,6 +77,15 @@ function parsearLinhaEndereco(linha) {
         linha = linha.substring(0, dashIdx).trim();
     }
 
+    // Limpa sufixos de cidade/sigla que podem vir junto ao bairro
+    // Ex: "CENTRO ITAPEMA (ITP)" → "CENTRO"
+    // Ex: "CENTRO FLORIANOPOLIS SC" → "CENTRO"
+    bairroExtr = bairroExtr
+        .replace(/\s+[A-Z][A-Z\s]{2,20}\s*\([A-Z]{2,4}\)\s*$/, "") // "ITAPEMA (ITP)"
+        .replace(/\s+[A-Z]{2,20}\s+[A-Z]{2}\s*$/, "")               // "FLORIANOPOLIS SC"
+        .replace(/\s+[A-Z]{2}\s*$/, "")                              // trailing UF isolado "SC"
+        .trim();
+
     // Padrão com vírgula: "RUA NOME, 123, COMPLEMENTO"
     const mComma = linha.match(/^(.*?),\s*(\d{1,6}[A-Z]?),?\s*(.*)$/);
     if (mComma) {
@@ -95,6 +105,31 @@ function parsearLinhaEndereco(linha) {
     }
 
     return { ruaExtr: linha, numeroExtr: "", complementoExtr: "", bairroExtr };
+}
+
+/**
+ * Separa o nome do edifício do campo complemento quando não há prefixo "ED."
+ * Ex: "AP 203 MANHATTAN" → { complemento: "AP 203", edificio: "MANHATTAN" }
+ * Ex: "AP 603 ED MONTMARTRE" → { complemento: "AP 603", edificio: "MONTMARTRE" }
+ */
+function separarEdificioDoComplemento(complementoExtr) {
+    // Caso 1: prefixo explícito EDIFICIO / EDIF. / ED.
+    const mEdif = complementoExtr.match(/\b(?:EDIFICIO|EDIF\.?|ED\.?)\s+([A-Z][A-Z\s0-9]{2,30})(?=\s*$)/);
+    if (mEdif) {
+        return {
+            complemento: complementoExtr.substring(0, complementoExtr.lastIndexOf(mEdif[0])).trim(),
+            edificio:    mEdif[1].trim()
+        };
+    }
+    // Caso 2: sem prefixo — "AP 203 MANHATTAN" / "APTO 5 SOLAR DAS FLORES"
+    const mSemPref = complementoExtr.match(/^((?:AP(?:TO)?\.?\s*\d+[A-Z]?|SL\s*\d+[A-Z]?|SALA\s*\d+[A-Z]?|CASA\s*\d+[A-Z]?))\s+([A-Z][A-Z0-9\s]{2,30})$/);
+    if (mSemPref) {
+        return {
+            complemento: mSemPref[1].trim(),
+            edificio:    mSemPref[2].trim()
+        };
+    }
+    return { complemento: complementoExtr, edificio: "" };
 }
 
 // ─── Parsers específicos por tipo de comprovante ──────────────────────────────
@@ -122,12 +157,9 @@ function parsearCelesc(T) {
         ruaExtr = p.ruaExtr; numeroExtr = p.numeroExtr;
         complementoExtr = p.complementoExtr; bairroExtr = p.bairroExtr;
 
-        // Extrai edifício do complemento: "AP 603 ED MONTMARTRE" → edificio="MONTMARTRE", complemento="AP 603"
-        const mEdif = complementoExtr.match(/\b(?:EDIFICIO|EDIF\.?|ED\.?)\s+([A-Z][A-Z\s0-9]{2,30})(?=\s*$)/);
-        if (mEdif) {
-            edificioExtr = mEdif[1].trim();
-            complementoExtr = complementoExtr.substring(0, complementoExtr.lastIndexOf(mEdif[0])).trim();
-        }
+        const edifSep = separarEdificioDoComplemento(complementoExtr);
+        complementoExtr = edifSep.complemento;
+        if (edifSep.edificio) edificioExtr = edifSep.edificio;
     }
 
     // "CEP: 88800-000  CIDADE: CRICIUMA SC"
@@ -213,11 +245,19 @@ function parsearEnergiaGenerica(T) {
 
     const rEdif = T.match(/\b(?:EDIFICIO|EDIF)\s+([A-Z][A-Z\s0-9]{2,30})(?=,|\n|AP|BL)/);
     const rLote = T.match(/\bLOTEAMENTO\s+([A-Z][A-Z\s0-9]{2,30})(?=,|\n)/);
+    let edificioExtr = rEdif ? rEdif[1].trim() : "";
+
+    // Separa edificio do complemento quando não há prefixo explícito (ex: "AP 203 MANHATTAN")
+    if (!edificioExtr && complementoExtr) {
+        const edifSep = separarEdificioDoComplemento(complementoExtr);
+        complementoExtr = edifSep.complemento;
+        edificioExtr    = edifSep.edificio;
+    }
 
     return {
         nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr,
         cepFormatado: formatarCep(extrairCep(T)),
-        edificioExtr: rEdif ? rEdif[1].trim() : "",
+        edificioExtr,
         loteamentoExtr: rLote ? rLote[1].trim() : ""
     };
 }
@@ -771,6 +811,34 @@ const validarPedidoPrefeitura = async (req, res) => {
         if (pedidoQuery.rows.length === 0) return res.status(404).json({ erro: "Não encontrado." });
         const pedido = pedidoQuery.rows[0];
 
+        // Se cd_contribuinte = 0, busca localmente se já existe código Bauhaus para esse CPF
+        // (necessário pois a API Bauhaus retorna 500 no GET por CPF mesmo quando o contribuinte existe)
+        if ((parseInt(pedido.cd_contribuinte) || 0) === 0 && pedido.nr_cpf_atual) {
+            const cpfLimpo = (pedido.nr_cpf_atual || "").replace(/\D/g, "");
+            console.log(`[VALIDAR] cd_contribuinte=0, buscando código Bauhaus local para CPF "${cpfLimpo}"`);
+            try {
+                const localQuery = await pool.query(
+                    `SELECT cd_contribuinte
+                       FROM database.dados_contribuintes
+                      WHERE REGEXP_REPLACE(nr_cpf_atual, '[^0-9]', '', 'g') = $1
+                        AND cd_contribuinte > 0
+                      ORDER BY dt_atualizacao DESC, hr_atualizacao DESC
+                      LIMIT 1`,
+                    [cpfLimpo]
+                );
+                if (localQuery.rows.length > 0) {
+                    pedido.cd_contribuinte = localQuery.rows[0].cd_contribuinte;
+                    console.log(`[VALIDAR] ✔ Código Bauhaus encontrado localmente: cd_contribuinte=${pedido.cd_contribuinte}`);
+                } else {
+                    console.log(`[VALIDAR] Nenhum código Bauhaus local encontrado para esse CPF — será feito POST`);
+                }
+            } catch (e) {
+                console.warn("[VALIDAR] Erro na busca local de cd_contribuinte:", e.message);
+            }
+        }
+
+        console.log(`[VALIDAR] Nome para Bauhaus: "${pedido.nm_contribuinte}" (cd_contribuinte=${pedido.cd_contribuinte})`);
+
         if (acao === 'CANCELAR') {
             // SMS via Twilio
             try {
@@ -807,6 +875,41 @@ const validarPedidoPrefeitura = async (req, res) => {
             );
             return res.json({ sucesso: true });
         } else {
+            // Verifica se a aprovação via API é obrigatória
+            const configQuery = await pool.query(`SELECT st_aprovacaoaut FROM master.dados_gerais LIMIT 1`);
+            const valorFlag = configQuery.rows[0]?.st_aprovacaoaut;
+            console.log(`[VALIDAR] st_aprovacaoaut = '${valorFlag}' | apiObrigatoria = ${valorFlag === 'S'}`);
+            const apiObrigatoria = valorFlag === 'S';
+
+            if (apiObrigatoria) {
+                // Bloqueante: só aprova se a API retornar sucesso
+                const resultadoBauhaus = await sincronizarContribuinteBauhaus(pedido);
+                console.log("[BAUHAUS] Resultado:", resultadoBauhaus);
+
+                if (!resultadoBauhaus.sucesso) {
+                    const detalhe = typeof resultadoBauhaus.erro === 'object'
+                        ? JSON.stringify(resultadoBauhaus.erro)
+                        : resultadoBauhaus.erro;
+                    return res.status(400).json({
+                        erro: `Não foi possível atualizar a API externa antes de efetivar. Verifique a configuração da API e tente novamente.`,
+                        detalhe
+                    });
+                }
+
+                // Salva código Bauhaus para evitar duplicatas em aprovações futuras
+                if (["incluido", "atualizado_via_cpf"].includes(resultadoBauhaus.acao) && resultadoBauhaus.codigo > 0) {
+                    try {
+                        await pool.query(
+                            `UPDATE database.dados_contribuintes SET cd_contribuinte = $1 WHERE id_dados_contribuintes = $2`,
+                            [resultadoBauhaus.codigo, id]
+                        );
+                        console.log(`[BAUHAUS] cd_contribuinte=${resultadoBauhaus.codigo} salvo em dados_contribuintes (acao=${resultadoBauhaus.acao})`);
+                    } catch (e) {
+                        console.warn("[BAUHAUS] Falha ao salvar cd_contribuinte:", e.message);
+                    }
+                }
+            }
+
             await pool.query(
                 `UPDATE database.dados_contribuintes
                  SET st_validado_prefeitura = 'S',
@@ -816,6 +919,24 @@ const validarPedidoPrefeitura = async (req, res) => {
                  WHERE id_dados_contribuintes = $1`,
                 [id, id_usuarioaprov || null, dt_aprov || null, hr_aprov || null]
             );
+
+            // Se a API não é obrigatória, dispara em background mesmo assim (best-effort)
+            if (!apiObrigatoria) {
+                sincronizarContribuinteBauhaus(pedido)
+                    .then(r => {
+                        console.log("[BAUHAUS] Resultado:", r);
+                        // Salva código Bauhaus para evitar duplicatas futuras
+                        if (["incluido", "atualizado_via_cpf"].includes(r.acao) && r.codigo > 0) {
+                            pool.query(
+                                `UPDATE database.dados_contribuintes SET cd_contribuinte = $1 WHERE id_dados_contribuintes = $2`,
+                                [r.codigo, id]
+                            ).then(() => console.log(`[BAUHAUS] cd_contribuinte=${r.codigo} salvo (background)`))
+                             .catch(e => console.warn("[BAUHAUS] Falha ao salvar cd_contribuinte (background):", e.message));
+                        }
+                    })
+                    .catch(e => console.error("[BAUHAUS] Falha inesperada:", e.message));
+            }
+
             return res.json({ sucesso: true });
         }
     } catch (error) {

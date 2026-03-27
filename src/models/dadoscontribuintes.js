@@ -81,6 +81,25 @@ async function extrairTextoDocumento(buffer, isPdf) {
  * ADICIONADO: suporte para buffer de arquivo e nome original
  */
 async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal = null) {
+    // Resolve id_municipioatual e ds_cidade_atual pelo nome extraído
+    if (dados.ds_cidade_atual) {
+        try {
+            const { rows: rowsMun } = await pool.query(
+                `SELECT id_municipios, nm_municipio
+                   FROM database.municipios
+                  WHERE UPPER(TRIM(nm_municipio)) = UPPER(TRIM($1))
+                  LIMIT 1`,
+                [dados.ds_cidade_atual]
+            );
+            if (rowsMun.length > 0) {
+                dados.id_municipioatual = rowsMun[0].id_municipios;
+                dados.ds_cidade_atual   = rowsMun[0].nm_municipio;
+            }
+        } catch (e) {
+            console.error("[MODEL] Erro ao resolver município:", e.message);
+        }
+    }
+
     const sql = `
         INSERT INTO database.dados_contribuintes (
             ds_inscricao_imovel, cd_reduzido_imovel, cd_contribuinte, nm_contribuinte,

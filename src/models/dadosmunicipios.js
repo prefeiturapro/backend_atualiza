@@ -18,4 +18,16 @@ async function buscarMunicipioPadrao() {
     }
 }
 
-module.exports = { buscarMunicipioPadrao };
+async function listarMunicipios() {
+    try {
+        const { rows } = await pool.query(
+            `SELECT id_municipios, nm_municipio FROM database.municipios ORDER BY nm_municipio`
+        );
+        return rows;
+    } catch (error) {
+        console.error(`[MODEL] ERRO AO LISTAR MUNICÍPIOS:`, error.message);
+        throw error;
+    }
+}
+
+module.exports = { buscarMunicipioPadrao, listarMunicipios };

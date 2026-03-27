@@ -1,5 +1,15 @@
 const modelMunicipios = require("../models/dadosmunicipios");
 
+async function listarMunicipios(req, res) {
+    try {
+        const rows = await modelMunicipios.listarMunicipios();
+        return res.json(rows);
+    } catch (error) {
+        console.error("[CONTROLLER] Erro ao listar municípios:", error.message);
+        res.status(500).json({ erro: "Erro ao listar municípios." });
+    }
+}
+
 /**
  * Retorna o município configurado nos Dados Gerais da Prefeitura
  */
@@ -25,4 +35,4 @@ async function buscarMunicipioSede(req, res) {
     }
 }
 
-module.exports = { buscarMunicipioSede };
+module.exports = { buscarMunicipioSede, listarMunicipios };

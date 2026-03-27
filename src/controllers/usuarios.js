@@ -296,7 +296,7 @@ const recuperarSenha = async (req, res) => {
 
                         <div style="background: #f8f9fa; padding: 16px 32px; text-align: center; border-top: 1px solid #e9ecef;">
                             <p style="margin: 0; font-size: 11px; color: #adb5bd;">
-                                © 2026 PrefeituraPro — Soluções Municipais. Todos os direitos reservados.
+                                © 2026 AtualizaAI — Soluções Municipais. Todos os direitos reservados.
                             </p>
                         </div>
                     </div>

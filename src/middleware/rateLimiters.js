@@ -9,10 +9,10 @@ const loginLimiter = rateLimit({
     legacyHeaders: false
 });
 
-// OTP (SMS/email): máx. 3 envios por IP a cada 5 minutos
+// OTP (SMS/email): máx. 10 envios por IP a cada 5 minutos
 const otpLimiter = rateLimit({
     windowMs: 5 * 60 * 1000,
-    max: 3,
+    max: 10,
     message: { erro: 'Limite de envios de código atingido. Aguarde 5 minutos.' },
     standardHeaders: true,
     legacyHeaders: false

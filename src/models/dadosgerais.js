@@ -27,14 +27,23 @@ async function atualizarDadosGerais(id, d) {
             st_logincpf = $7, st_logininscricao = $8, st_loginreduzido = $9,
             st_loginpornome = $10, st_logingovbr = $11, st_logincertificado = $12,
             st_aprovacaoaut = $13, st_login_cod_cont = $14, id_municipios = $15,
-            st_bloqueioresp = $16, st_bloqueiacmc = $17, st_obrigaemail = $18
-        WHERE id_dados_gerais = $19
+            st_bloqueioresp = $16, st_bloqueiacmc = $17, st_obrigaemail = $18,
+            ds_api = $19, ds_apitoken = $20,
+            ds_apibetha = $21, ds_tokenbetha = $22,
+            ds_apipublica = $23, ds_tokenpublica = $24,
+            ds_apiipm = $25, ds_tokenipm = $26
+        WHERE id_dados_gerais = $27
     `;
     const values = [
         d.nr_exercicio, d.st_checkcpf, d.st_checkcnpj, d.ds_ftp, d.nm_userftp, d.ds_senhaftp,
         d.st_logincpf, d.st_logininscricao, d.st_loginreduzido, d.st_loginpornome,
         d.st_logingovbr, d.st_logincertificado, d.st_aprovacaoaut, d.st_login_cod_cont,
-        d.id_municipios, d.st_bloqueioresp, d.st_bloqueiacmc, d.st_obrigaemail || 'N', id
+        d.id_municipios, d.st_bloqueioresp, d.st_bloqueiacmc, d.st_obrigaemail || 'N',
+        d.ds_api       || null, d.ds_apitoken    || null,
+        d.ds_apibetha  || null, d.ds_tokenbetha  || null,
+        d.ds_apipublica || null, d.ds_tokenpublica || null,
+        d.ds_apiipm    || null, d.ds_tokenipm    || null,
+        id
     ];
     await pool.query(sql, values);
 }

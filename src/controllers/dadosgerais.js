@@ -33,7 +33,15 @@ async function buscarConfiguracoes(req, res) {
             st_aprovacaoaut: dados.st_aprovacaoaut,
             st_login_cod_cont: dados.st_login_cod_cont,
             st_bloqueiacmc: dados.st_bloqueiacmc,
-            st_obrigaemail: dados.st_obrigaemail || 'N'
+            st_obrigaemail: dados.st_obrigaemail || 'N',
+            ds_api:         dados.ds_api         || '',
+            ds_apitoken:    dados.ds_apitoken    || '',
+            ds_apibetha:    dados.ds_apibetha    || '',
+            ds_tokenbetha:  dados.ds_tokenbetha  || '',
+            ds_apipublica:  dados.ds_apipublica  || '',
+            ds_tokenpublica: dados.ds_tokenpublica || '',
+            ds_apiipm:      dados.ds_apiipm      || '',
+            ds_tokenipm:    dados.ds_tokenipm    || ''
         });
 
     } catch (error) {
