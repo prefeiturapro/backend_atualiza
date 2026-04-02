@@ -397,6 +397,55 @@ function parsearGenerico(T) {
 /**
  * Dispatcher — detecta o tipo de comprovante e chama o parser adequado.
  */
+function parsearVivo(T) {
+    // Nome: bloco após o header da Telefônica — primeira linha em maiúsculas após "CNPJ"
+    let nome = "";
+    const mNome = T.match(/CNPJ[^\n]*\n([A-Z][A-Z\s.]{5,60})(?=\n)/);
+    if (mNome) nome = mNome[1].trim();
+    if (!nome) nome = extrairNome(T);
+
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "";
+
+    // O endereço fica nas 3 linhas após o nome:
+    // Linha 1: "R GUILHERMINA DA SILVA 400"  (rua + número)
+    // Linha 2: "LARANJINHA"                  (bairro)
+    // Linha 3: "88818-677 CRICIUMA - SC"     (cep cidade-uf)
+    if (nome) {
+        const idxNome = T.indexOf(nome);
+        if (idxNome >= 0) {
+            const aposNome = T.substring(idxNome + nome.length).trimStart();
+            const linhas = aposNome.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+
+            if (linhas.length >= 1) {
+                const p = parsearLinhaEndereco(linhas[0]);
+                ruaExtr     = p.ruaExtr     || linhas[0].replace(/\s+\d{1,6}[A-Z]?\s*$/, "").trim();
+                numeroExtr  = p.numeroExtr  || (linhas[0].match(/\s+(\d{1,6}[A-Z]?)\s*$/) || [])[1] || "";
+                complementoExtr = p.complementoExtr || "";
+            }
+            if (linhas.length >= 2 && !/^\d{5}/.test(linhas[1])) {
+                bairroExtr = linhas[1];
+            }
+            // Linha com CEP: "88818-677 CRICIUMA - SC" ou "88818-677 CRICIUMA-SC"
+            const linhaCep = linhas.find(l => /^\d{5}-?\d{3}/.test(l));
+            if (linhaCep) {
+                const mCidUF = linhaCep.match(/^\d{5}-?\d{3}\s+([A-Z][A-Z\s]+?)\s*[-/]\s*[A-Z]{2}\b/);
+                if (mCidUF) cidadeExtr = mCidUF[1].trim();
+                if (!bairroExtr) {
+                    // Se bairro não foi capturado, tenta pegar da linha antes do CEP
+                    const idxCep = linhas.indexOf(linhaCep);
+                    if (idxCep > 1) bairroExtr = linhas[idxCep - 1];
+                }
+            }
+        }
+    }
+
+    return {
+        nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr,
+        cepFormatado: formatarCep(extrairCep(T)),
+        edificioExtr: "", loteamentoExtr: ""
+    };
+}
+
 function parsearComprovante(T) {
     if (T.includes("CELESC"))         return parsearCelesc(T);
     if (T.includes("COOPERALIANCA"))  return parsearCooperalianca(T);
@@ -413,6 +462,8 @@ function parsearComprovante(T) {
         T.includes("ENERGISA") ||
         T.includes("COELBA") ||
         T.includes("LIGHT"))          return parsearEnergiaGenerica(T);
+    if (T.includes("TELEFONICA") ||
+        T.includes("VIVO"))           return parsearVivo(T);
     return parsearGenerico(T);
 }
 
