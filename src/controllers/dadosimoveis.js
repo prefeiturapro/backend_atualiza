@@ -69,10 +69,10 @@ const dadosimoveis = async (req, res) => {
  * Retorna { base64: "...", descricao: "..." } ou { base64: null } se não configurado/não encontrado.
  */
 const buscarFotoImovel = async (req, res) => {
-    const { inscricao } = req.query;
-    console.log("[FOTO] ▶ Requisição recebida — inscricao:", inscricao);
+    const { reduzido } = req.query;
+    console.log("[FOTO] ▶ Requisição recebida — cd_reduzido:", reduzido);
 
-    if (!inscricao) return res.status(400).json({ erro: "Inscrição não informada." });
+    if (!reduzido) return res.status(400).json({ erro: "Código reduzido não informado." });
 
     try {
         const config = await modelDadosGerais.obterDadosGerais();
@@ -87,14 +87,14 @@ const buscarFotoImovel = async (req, res) => {
 
         const baseUrl = ds_api.replace(/\/$/, "");
         const urlRaw = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`;
-        const url = `${urlRaw}/geo/api/imovel?Inscricao=${encodeURIComponent(inscricao)}`;
-        console.log("[FOTO]   GET", url);
-
+        const url = `${urlRaw}/geo/api/ImagemImovel/${reduzido}`;
         const headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            ...(ds_apitoken ? { Authorization: ds_apitoken, Token: ds_apitoken } : {})
+            ...(ds_apitoken ? { Authorization: ds_apitoken } : {})
         };
+
+        console.log("[FOTO]   GET", url);
 
         const resposta = await axios.get(url, { headers, timeout: 10000 });
         console.log("[FOTO]   HTTP status:", resposta.status);
