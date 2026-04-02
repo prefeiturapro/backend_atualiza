@@ -1,6 +1,7 @@
 const { buscaImoveisDinamica } = require("../models/dadosimoveis");
-const modelDadosGerais = require("../models/dadosgerais"); // Precisamos dele para ler a trava
+const modelDadosGerais = require("../models/dadosgerais");
 const pool = require("../models/connection");
+const axios = require("axios");
 
 const dadosimoveis = async (req, res) => {
     const { reduzido } = req.body;
@@ -62,4 +63,63 @@ const dadosimoveis = async (req, res) => {
     }
 }
 
-module.exports = { dadosimoveis };
+/**
+ * GET /dadosimoveis/foto?inscricao=XX
+ * Busca a foto principal do imóvel na API de Fotos da Bauhaus.
+ * Retorna { base64: "...", descricao: "..." } ou { base64: null } se não configurado/não encontrado.
+ */
+const buscarFotoImovel = async (req, res) => {
+    const { inscricao } = req.query;
+    console.log("[FOTO] ▶ Requisição recebida — inscricao:", inscricao);
+
+    if (!inscricao) return res.status(400).json({ erro: "Inscrição não informada." });
+
+    try {
+        const config = await modelDadosGerais.obterDadosGerais();
+        const { ds_api, ds_apitoken } = config;
+        console.log("[FOTO]   ds_api    :", ds_api || "(não configurado)");
+        console.log("[FOTO]   ds_apitoken:", ds_apitoken ? "(preenchido)" : "(vazio)");
+
+        if (!ds_api) {
+            console.log("[FOTO]   API não configurada — retornando null");
+            return res.json({ base64: null });
+        }
+
+        const baseUrl = ds_api.replace(/\/$/, "");
+        const urlRaw = /^https?:\/\//i.test(baseUrl) ? baseUrl : `https://${baseUrl}`;
+        const url = `${urlRaw}/geo/api/imovel?Inscricao=${encodeURIComponent(inscricao)}`;
+        console.log("[FOTO]   GET", url);
+
+        const headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            ...(ds_apitoken ? { Authorization: ds_apitoken, Token: ds_apitoken } : {})
+        };
+
+        const resposta = await axios.get(url, { headers, timeout: 10000 });
+        console.log("[FOTO]   HTTP status:", resposta.status);
+        console.log("[FOTO]   Resposta:", JSON.stringify(resposta.data, null, 2).substring(0, 500));
+
+        const imagem = resposta.data?.Imovel?.Imagem;
+
+        if (!imagem || !imagem.ConteudoBase64) {
+            console.log("[FOTO]   Nenhuma imagem encontrada no retorno da API");
+            return res.json({ base64: null });
+        }
+
+        console.log("[FOTO] ✔ Foto encontrada — Descricao:", imagem.Descricao);
+        return res.json({
+            base64: imagem.ConteudoBase64,
+            descricao: imagem.Descricao || ""
+        });
+
+    } catch (err) {
+        console.error("[FOTO] ✖ Erro:", err.response?.status, err.message);
+        if (err.response?.data) {
+            console.error("[FOTO]   Detalhe:", JSON.stringify(err.response.data));
+        }
+        return res.json({ base64: null });
+    }
+};
+
+module.exports = { dadosimoveis, buscarFotoImovel };

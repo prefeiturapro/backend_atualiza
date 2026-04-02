@@ -41,7 +41,9 @@ async function buscarConfiguracoes(req, res) {
             ds_apipublica:  dados.ds_apipublica  || '',
             ds_tokenpublica: dados.ds_tokenpublica || '',
             ds_apiipm:      dados.ds_apiipm      || '',
-            ds_tokenipm:    dados.ds_tokenipm    || ''
+            ds_tokenipm:    dados.ds_tokenipm    || '',
+            ds_apifoto:     dados.ds_apifoto     || '',
+            ds_tokenfoto:   dados.ds_tokenfoto   || ''
         });
 
     } catch (error) {
