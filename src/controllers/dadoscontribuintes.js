@@ -446,10 +446,57 @@ function parsearVivo(T) {
     };
 }
 
+/**
+ * CONASA / AGUAS DE ITAPEMA
+ * Layout: empresa no topo, depois bloco do cliente ("VIA DO CONTRIBUINTE")
+ * com 3 linhas: rua+num / bairro / cidade+UF+CEP.
+ * Nome confiável: "NOME: FULANO" no rodapé do boleto.
+ */
+function parsearConasa(T) {
+    // Nome: label no rodapé é o mais confiável
+    let nome = "";
+    const mNomeLabel = T.match(/\bNOME:\s*([A-Z][A-Z\s.]{5,60})(?=\n|DIGITO|MATRICULA|$)/);
+    if (mNomeLabel) nome = mNomeLabel[1].trim();
+    if (!nome) nome = extrairNome(T);
+
+    let ruaExtr = "", numeroExtr = "", complementoExtr = "", bairroExtr = "", cidadeExtr = "", cepFormatado = "";
+
+    // Bloco do cliente após "VIA DO CONTRIBUINTE" — 3 linhas: rua+num, bairro, cidade+cep
+    const mBloco = T.match(/VIA DO CONTRIBUINTE\s*\n([^\n]+)\n([^\n]+)\n([^\n]+)/);
+    if (mBloco) {
+        const linha1 = mBloco[1].trim(); // ex: "R. 0126, 83"
+        const linha2 = mBloco[2].trim(); // ex: "CENTRO"
+        const linha3 = mBloco[3].trim(); // ex: "ITAPEMA SC CEP: 88220-000"
+
+        const p = parsearLinhaEndereco(linha1);
+        ruaExtr = p.ruaExtr;
+        numeroExtr = p.numeroExtr;
+        complementoExtr = p.complementoExtr;
+
+        // Bairro: linha 2 se não contiver CEP
+        if (!/\d{5}/.test(linha2) && linha2.length > 1) bairroExtr = linha2;
+
+        // Cidade: "ITAPEMA SC CEP: 88220-000" → "ITAPEMA"
+        const mCid = linha3.match(/^([A-Z][A-Z\s]+?)\s+[A-Z]{2}\s+(?:CEP[:\s]*)?\d/);
+        if (mCid) cidadeExtr = mCid[1].trim();
+
+        // CEP da linha 3
+        const mCep = linha3.match(/(\d{5}-?\d{3})/);
+        if (mCep) cepFormatado = formatarCep(mCep[1].replace('-', ''));
+    }
+
+    if (!cepFormatado) cepFormatado = formatarCep(extrairCep(T));
+
+    return { nome, ruaExtr, numeroExtr, complementoExtr, bairroExtr, cidadeExtr, cepFormatado, edificioExtr: "", loteamentoExtr: "" };
+}
+
 function parsearComprovante(T) {
     if (T.includes("CELESC"))         return parsearCelesc(T);
     if (T.includes("COOPERALIANCA"))  return parsearCooperalianca(T);
     if (T.includes("SAMAE"))          return parsearSamae(T);
+    if (T.includes("CONASA") ||
+        T.includes("AGUAS DE ITAPEMA") ||
+        T.includes("AGUASDEITAPEMA")) return parsearConasa(T);
     if (T.includes("CASAN") ||
         T.includes("SABESP") ||
         T.includes("SANEPAR") ||
