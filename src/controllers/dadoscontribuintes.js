@@ -767,7 +767,8 @@ const processarComprovante = async (req, res) => {
 const salvarDadosContribuinte = async (req, res) => {
     console.log("--- DEBUG: INÍCIO DO SALVAMENTO ---");
     try {
-        console.log("Arquivo recebido:", req.file ? req.file.originalname : "NENHUM ARQUIVO");
+        console.log("Arquivo recebido:", req.files?.['comprovante']?.[0]?.originalname || "NENHUM ARQUIVO");
+        console.log("Contrato recebido:", req.files?.['contrato']?.[0]?.originalname || "NENHUM");
 
         if (!req.body.dados) {
             console.error("ERRO: req.body.dados está vazio!");
@@ -780,13 +781,14 @@ const salvarDadosContribuinte = async (req, res) => {
         const dados = JSON.parse(req.body.dados);
         console.log("Dados parseados com sucesso para o contribuinte:", dados.nm_contribuinte);
         
-        const arquivoBinario = req.file ? req.file.buffer : null;
-        const nomeArquivoOriginal = req.file ? req.file.originalname : null;
+        const arquivoBinario = req.files?.['comprovante']?.[0]?.buffer || null;
+        const nomeArquivoOriginal = req.files?.['comprovante']?.[0]?.originalname || null;
+        const contratoBuffer = req.files?.['contrato']?.[0]?.buffer || null;
 
         if (dados.cd_contribuinte == null) return res.status(400).json({ erro: "Código obrigatório." });
 
         console.log("Chamando atualizarContribuinte no Model...");
-        const resultado = await atualizarContribuinte(dados, arquivoBinario, nomeArquivoOriginal);
+        const resultado = await atualizarContribuinte(dados, arquivoBinario, nomeArquivoOriginal, contratoBuffer);
 
         console.log("--- DEBUG: SALVO COM SUCESSO ---");
         return res.json({
@@ -903,7 +905,7 @@ const listarPedidosPendentes = async (req, res) => {
 };
 
 const validarPedidoPrefeitura = async (req, res) => {
-    const { id, acao, id_usuarioaprov, dt_aprov, hr_aprov, id_usuariorepr, dt_repro, hr_repro } = req.body;
+    const { id, acao, id_usuarioaprov, dt_aprov, hr_aprov, id_usuariorepr, dt_repro, hr_repro, ds_indeferimento } = req.body;
     try {
         const pedidoQuery = await pool.query("SELECT * FROM database.dados_contribuintes WHERE id_dados_contribuintes = $1", [id]);
         if (pedidoQuery.rows.length === 0) return res.status(404).json({ erro: "Não encontrado." });
@@ -938,12 +940,15 @@ const validarPedidoPrefeitura = async (req, res) => {
         console.log(`[VALIDAR] Nome para Bauhaus: "${pedido.nm_contribuinte}" (cd_contribuinte=${pedido.cd_contribuinte})`);
 
         if (acao === 'CANCELAR') {
+            const primeiroNome = pedido.nm_contribuinte.split(' ')[0];
+            const motivo = ds_indeferimento || "";
+
             // SMS via Twilio
             try {
                 await client.messages.create({
                     messagingServiceSid: process.env.TWILIO_MESSAGE_SERVICE_SID,
                     to: `+55${pedido.nr_telefone_atual.replace(/\D/g, "")}`,
-                    body: `AtualizaAí: Ola ${pedido.nm_contribuinte.split(' ')[0]}, seu pedido foi indeferido. Verifique seu e-mail.`
+                    body: `AtualizaAí: Ola ${primeiroNome}, PEDIDO INDEFERIDO, VERIFIQUE SEU EMAIL OU ENTRE EM CONTATO COM A PREFEITURA.`
                 });
             } catch (err) { console.error("Erro SMS:", err.message); }
 
@@ -956,7 +961,8 @@ const validarPedidoPrefeitura = async (req, res) => {
                         subject: "Pedido de Atualização Indeferido",
                         html: `
                             <h3>Olá, ${pedido.nm_contribuinte}</h3>
-                            <p>Seu pedido de atualização cadastral foi analisado e <strong>indeferido</strong> devido a inconsistências nos dados ou no documento enviado.</p>
+                            <p>Seu pedido de atualização cadastral foi analisado e <strong>indeferido</strong>.</p>
+                            ${motivo ? `<p><strong>Motivo:</strong> ${motivo}</p>` : ""}
                             <p>Favor procurar o setor de Cadastro Imobiliário da Prefeitura para regularizar sua situação.</p>
                         `
                     });
@@ -967,9 +973,10 @@ const validarPedidoPrefeitura = async (req, res) => {
                  SET st_validado_prefeitura = 'C',
                      id_usuariorepr = $2,
                      dt_repro = $3,
-                     hr_repro = $4
+                     hr_repro = $4,
+                     ds_indeferimento = $5
                  WHERE id_dados_contribuintes = $1`,
-                [id, id_usuariorepr || null, dt_repro || null, hr_repro || null]
+                [id, id_usuariorepr || null, dt_repro || null, hr_repro || null, motivo || null]
             );
             return res.json({ sucesso: true });
         } else {
@@ -1125,6 +1132,44 @@ const listarComprovantesRecusados = async (req, res) => {
     }
 };
 
+const downloadContrato = async (req, res) => {
+    const { id } = req.params;
+    try {
+        const { rows } = await pool.query(
+            `SELECT ds_contrato FROM database.dados_contribuintes WHERE id_dados_contribuintes = $1`,
+            [id]
+        );
+        if (!rows.length || !rows[0].ds_contrato) {
+            return res.status(404).json({ erro: "Contrato não encontrado." });
+        }
+        const buf = rows[0].ds_contrato;
+
+        // Detecta tipo pelo magic number dos primeiros bytes
+        let ext = 'bin';
+        let mime = 'application/octet-stream';
+        if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) {
+            ext = 'pdf'; mime = 'application/pdf';                          // %PDF
+        } else if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) {
+            ext = 'jpg'; mime = 'image/jpeg';                               // JPEG
+        } else if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) {
+            ext = 'png'; mime = 'image/png';                                // PNG
+        } else if (buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04) {
+            ext = 'zip'; mime = 'application/zip';                          // ZIP/PK
+        } else if (buf[0] === 0x52 && buf[1] === 0x61 && buf[2] === 0x72 && buf[3] === 0x21) {
+            ext = 'rar'; mime = 'application/x-rar-compressed';             // RAR
+        } else if (buf[0] === 0x37 && buf[1] === 0x7A && buf[2] === 0xBC && buf[3] === 0xAF) {
+            ext = '7z';  mime = 'application/x-7z-compressed';              // 7-Zip
+        }
+
+        res.setHeader('Content-Type', mime);
+        res.setHeader('Content-Disposition', `attachment; filename="CONTRATO_${id}.${ext}"`);
+        res.send(buf);
+    } catch (error) {
+        console.error("Erro ao baixar contrato:", error);
+        res.status(500).json({ erro: "Erro ao recuperar contrato." });
+    }
+};
+
 const listarLoteamentos = async (req, res) => {
     try {
         const { rows } = await pool.query(
@@ -1158,6 +1203,7 @@ module.exports = {
     enviarComprovante,
     listarComprovantesRecusados,
     downloadComprovante,
+    downloadContrato,
     listarLoteamentos,
     listarEdificios
 };

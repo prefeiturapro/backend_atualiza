@@ -32,8 +32,9 @@ async function atualizarDadosGerais(id, d) {
             ds_apibetha = $21, ds_tokenbetha = $22,
             ds_apipublica = $23, ds_tokenpublica = $24,
             ds_apiipm = $25, ds_tokenipm = $26,
-            ds_apifoto = $27, ds_tokenfoto = $28
-        WHERE id_dados_gerais = $29
+            ds_apifoto = $27, ds_tokenfoto = $28,
+            st_contrato = $29
+        WHERE id_dados_gerais = $30
     `;
     const values = [
         d.nr_exercicio, d.st_checkcpf, d.st_checkcnpj, d.ds_ftp, d.nm_userftp, d.ds_senhaftp,
@@ -45,6 +46,7 @@ async function atualizarDadosGerais(id, d) {
         d.ds_apipublica || null, d.ds_tokenpublica || null,
         d.ds_apiipm     || null, d.ds_tokenipm     || null,
         d.ds_apifoto    || null, d.ds_tokenfoto    || null,
+        d.st_contrato   || 'N',
         id
     ];
     await pool.query(sql, values);

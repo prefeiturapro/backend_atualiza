@@ -80,7 +80,7 @@ async function extrairTextoDocumento(buffer, isPdf) {
  * Persistência no Banco de Dados
  * ADICIONADO: suporte para buffer de arquivo e nome original
  */
-async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal = null) {
+async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal = null, contratoBuffer = null) {
     // Resolve id_municipioatual e ds_cidade_atual pelo nome extraído
     if (dados.ds_cidade_atual) {
         try {
@@ -113,14 +113,14 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
             dt_atualizacao, hr_atualizacao,
             ds_comprovante, nm_arquivo_original, st_validado_prefeitura, st_extracao,
             st_rua_extr, st_bairro_extr, id_loteamentos, id_edificios,
-            id_bairros, id_logradouros, id_municipioatual
+            id_bairros, id_logradouros, id_municipioatual, ds_contrato
         ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
             $11, $12, $13, $14, $15, $16, $17, $18, $19, $20,
             $21, $22, $23, $24, $25, $26, $27, $28,
             CURRENT_DATE, LOCALTIME(0),
             $29, $30, 'N', $31, $32, $33, $34, $35,
-            $36, $37, $38
+            $36, $37, $38, $39
         )
         RETURNING nr_protocolo, nr_exercicio
     `;
@@ -163,7 +163,8 @@ async function atualizarContribuinte(dados, arquivoBuffer = null, nomeOriginal =
         dados.id_edificios     || null,      // $35
         dados.id_bairros       || null,      // $36
         dados.id_logradouros   || null,      // $37
-        dados.id_municipioatual || null      // $38
+        dados.id_municipioatual || null,     // $38
+        contratoBuffer                       // $39
     ];
 
     try {
