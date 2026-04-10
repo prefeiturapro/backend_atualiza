@@ -717,7 +717,25 @@ const processarComprovante = async (req, res) => {
         }
         // Se outro município: deixa os campos com o valor extraído para edição manual
 
-        // ── 5. Definir flag de qualidade da extração ─────────────────────────
+        // ── 5. Inserir em database.comprovantesrecusados se nenhum campo de endereço foi localizado ──
+        // Condição: cidade NÃO encontrada no banco E logradouro NÃO encontrado E bairro NÃO encontrado
+        if (!municipioMatch && !logradouroMatchFound && !bairroMatchFound) {
+            try {
+                const agora = new Date();
+                const dt_data = agora.toISOString().split("T")[0];
+                const hr_hora = agora.toTimeString().split(" ")[0];
+                await pool.query(
+                    `INSERT INTO database.comprovantesrecusados (ds_comprovanterecusado, dt_data, hr_hora)
+                     VALUES ($1, $2, $3)`,
+                    [req.file.buffer, dt_data, hr_hora]
+                );
+                console.log(`[COMPREC-NEW] Comprovante inserido em database.comprovantesrecusados — ${dt_data} ${hr_hora}`);
+            } catch (errIns) {
+                console.warn("[COMPREC-NEW] Falha ao inserir em comprovantesrecusados:", errIns.message);
+            }
+        }
+
+        // ── 6. Definir flag de qualidade da extração ─────────────────────────
         // 'N' = extração falhou em campo crítico (nome, logradouro ou bairro no mesmo município)
         let st_extracao = 'S';
         if (!nome) {

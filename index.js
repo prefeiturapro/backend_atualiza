@@ -52,6 +52,7 @@ const dadosGeraisRoutes         = require("./src/routes/dadosgerais");
 const dadosFormsRoutes          = require("./src/routes/dadosforms");
 const formsUsuariosRoutes       = require("./src/routes/formsUsuarios");
 const dashboardRoutes           = require("./src/routes/dashboard");
+const comprovantesRecusadosRoutes = require("./src/routes/comprovantesrecusados");
 
 const {
     enviarCodigo,
@@ -79,6 +80,7 @@ app.use("/dadosgerais",         dadosGeraisRoutes);
 app.use("/dadosforms",          dadosFormsRoutes);
 app.use("/formsUsuarios",       formsUsuariosRoutes);
 app.use("/dashboard",           dashboardRoutes);
+app.use("/comprovantesrecusados", comprovantesRecusadosRoutes);
 
 // ─── VERIFICAÇÃO DO SERVIÇO DE E-MAIL ──────────────────────────────────────
 const transporter = require('./src/config/mail');
